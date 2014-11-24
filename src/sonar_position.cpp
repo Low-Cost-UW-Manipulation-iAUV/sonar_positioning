@@ -13,8 +13,8 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
     sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this);
     sub_sonar = nh_.subscribe<std_msgs::Int32MultiArray>("/sonar", 1, &sonar_position::sub_callback_sonar, this);
 
-    pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position_x", 100);
-    pub_position_y = nh_.advertise<nav_msgs::Odometry>("/sonar/position_y", 100);
+    pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position/x", 100);
+    pub_position_y = nh_.advertise<nav_msgs::Odometry>("/sonar/position/y", 100);
 
     if (!nh_.getParam("/sonar/binsperaxis", binsperaxis)) {
 
