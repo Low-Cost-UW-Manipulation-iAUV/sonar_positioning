@@ -4,10 +4,10 @@
   <version>0.1.0</version>
   <description>subscribe to sonar data and attitude and find position update</description>
 
-  <maintainer email="first.lastname(#)posteo.de">Raphhael Nagel</maintainer>
+  <maintainer email="first.lastname@posteo.de">Raphhael Nagel</maintainer>
   <license>BSD</license>
   <url type="website">http://wiki.ros.org/beginner_tutorials</url>
-  <author email="first.lastname(#)posteo.de">Raphhael Nagel</author>
+  <author email="first.lastname@posteo.de">Raphhael Nagel</author>
 
   <buildtool_depend>catkin</buildtool_depend>
 
