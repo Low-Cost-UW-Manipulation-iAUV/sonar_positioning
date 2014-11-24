@@ -28,6 +28,15 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         calibration_length = 1000;
         nh_.setParam("/sonar/calibration_length", calibration_length);
     }  
+
+
+
+
+    if (!nh_.getParam("/sonar/binsperaxis", binsperaxis)) {
+
+        ROS_ERROR("Sonar Position: Could not find binsperaxis, ending. \n");
+        ros::shutdown();
+    }
     x_variance_data.clear();
     x_variance_data.reserve(calibration_length);
     y_variance_data.clear();
@@ -43,10 +52,25 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
     x_position_counter = 1;
     y_position_counter = 1;
 
-    variance_x_found = false;
-    variance_y_found = false;
-    variance_x = 0;
-    variance_y = 0;
+    // check if the variance for x is available on the parameter server
+    if (!nh_.getParam("/sonar/variance/x", variance_x)) {
+
+        ROS_ERROR("Sonar Position: Could not find variance of x, will determine it now.");
+        variance_x = 0;
+        variance_x_found = false;
+    } else { // if it is available skip the determination
+        variance_x_found = true;
+    }
+
+    // check for y as well.
+    if (!nh_.getParam("/sonar/variance/y", variance_y)) {
+
+        ROS_ERROR("Sonar Position: Could not find variance of y, will determine it now.");
+        variance_y = 0;
+        variance_y_found = false;
+    } else { // if it is available skip the determination
+        variance_y_found = true;
+    }    
 
 
 }
