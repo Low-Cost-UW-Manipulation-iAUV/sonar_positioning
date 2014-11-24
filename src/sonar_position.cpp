@@ -115,7 +115,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
                 x_position = x_position_sum / x_position_counter;  
 
                 // publish it              
-                publish_position(pub_position_x);
+                publish_position_x();
                 x_position_counter = 1;
                 x_position_sum = odom_dist;
             }
@@ -152,7 +152,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
                 y_position = y_position_sum / y_position_counter;  
 
                 // publish it              
-                publish_position(pub_position_y);
+                publish_position_y();
                 y_position_counter = 1;
                 y_position_sum = odom_dist;
             }
@@ -206,21 +206,30 @@ double sonar_position::getOdomDistance(int body_position, double angle_a, double
 
 /** publish_position(): DOes what is says
 */
-void sonar_position::publish_position(ros::Publisher pub) {
+void sonar_position::publish_position_x(void) {
     nav_msgs::Odometry sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
     sonar_position.header.frame_id = "odom";
     sonar_position.pose.pose.position.x = x_position;
-    sonar_position.pose.pose.position.y = y_position;
     sonar_position.pose.covariance.fill(0.0);
     // set the variance data for x
     sonar_position.pose.covariance[0] = variance_x;
+
+    pub_position_x.publish(sonar_position);
+}
+/** publish_position(): DOes what is says
+*/
+void sonar_position::publish_position_y(void) {
+    nav_msgs::Odometry sonar_position;
+    sonar_position.header.stamp = ros::Time::now(); 
+    sonar_position.header.frame_id = "odom";
+    sonar_position.pose.pose.position.y = y_position;
+    sonar_position.pose.covariance.fill(0.0);
     // set the variance data for y
     sonar_position.pose.covariance[7] = variance_y;
 
-    pub.publish(sonar_position);
+    pub_position_y.publish(sonar_position);
 }
-
 
 /** mean(): calculates the mean
 */

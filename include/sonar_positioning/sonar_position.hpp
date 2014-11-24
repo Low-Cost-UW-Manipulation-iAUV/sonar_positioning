@@ -17,7 +17,8 @@ private:
 
     double sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&);
     double getOdomDistance(int, double, double);
-    void publish_position(ros::Publisher);
+    void publish_position_x(void);
+    void publish_position_y(void);
 
     ros::NodeHandle nh_;
     ros::Subscriber sub_imu;
