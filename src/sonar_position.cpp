@@ -82,7 +82,7 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
 
     int binsperaxis = message->data[1];
-    double angle = message->date[0]/6392*360; ///THIS WILL NBEED CHANGING
+    double angle = message->data[0]/6392*360; ///THIS WILL NBEED CHANGING
     ROS_INFO("Angle is: %f - change the angle value soon!!!", angle);
     // extract the important data from the sonar data
     int d_hypot = sonar2Distance(message);
