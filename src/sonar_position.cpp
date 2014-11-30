@@ -82,7 +82,7 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
 
     int binsperaxis = message->data[1];
-    double angle = message->data[0];
+    double angle = (double)message->data[0];
     angle = angle * (360/6392); ///THIS WILL NBEED CHANGING
     ROS_INFO("step is: %d Angle is: %f - change the angle value soon!!!",message->data[0], angle);
     // extract the important data from the sonar data
