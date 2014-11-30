@@ -40,6 +40,7 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
     x_position_counter = 1;
     y_position_counter = 1;
 
+    last_distance = 0;
     // check if the variance for x is available on the parameter server
     if (!nh_.getParam("/sonar/variance/x", variance_x)) {
 
@@ -82,15 +83,15 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
 
     int binsperaxis = message->data[1];
-    double angle = (double)message->data[0];
-    angle = angle * (360/6392); ///THIS WILL NBEED CHANGING
-    ROS_INFO("step is: %d Angle is: %f - change the angle value soon!!!",message->data[0], angle);
-    // extract the important data from the sonar data
+    double steps_to_angle = ( (double) message->data[0] )* (360.0/6392.0); ///THIS WILL NBEED CHANGING
+    ROS_INFO("step is: %d Angle is: %f - change the angle value soon!!!", message->data[0], steps_to_angle);
+    // extract the imortant data from the sonar data
     int d_hypot = sonar2Distance(message);
 
     // if we are looking ahead (along x)
-    if(angle <= 45 && angle >= -45) {
+    if(steps_to_angle <= 45.0 && steps_to_angle >= -45.0) {
         double odom_dist = getOdomDistance(d_hypot, (yaw + message->data[0]), pitch);
+
         x_position_counter ++;
         x_position_sum += odom_dist;
 
@@ -124,10 +125,11 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             }
 
         } // We are looking at the y axis
-    } else if (angle <= 135 && angle >45 ) {
+    } else if (steps_to_angle <= 135.0 && steps_to_angle >45.0 ) {
         // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
             // We first look top down: undo the yaw and sonar angle. And then look at it from the side to counteract the current roll.
         double odom_dist = getOdomDistance(d_hypot, (yaw + message->data[0]), roll);
+
         y_position_counter ++;
         y_position_sum += odom_dist;
 
@@ -169,18 +171,29 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr& message) {
     // Find the number of data bins
     int numBins = message->data[1];
+    // the maximum distance to be found in dM
     int range = message->data[2];
+    // ensure we are staying within the message.
+    if(message->data.size() >= (numBins + 3) ) {
 
-    int max = 0;
-    int strongest_bin = 0;
-    for (int x=3; x<(range + 3); x++) {
-        if (message->data[x] > max) {
-            max = message->data[x];
-            strongest_bin = x;
+        int max = 0;
+        int strongest_bin = 0;
+        // find the strongest reflection
+        for (int x=3; x < (numBins+3); x++) {
+            if (message->data[x] > max) {
+                max = message->data[x];
+                strongest_bin = (x-2);
+            }
         }
+        // turn range back into meters from dM and return the strongest reflection distance
+        last_distance = strongest_bin * (range*0.1)/numBins;
+        return last_distance;
+    } else {
+        ROS_ERROR("Message did not contain any info. - returning last_distance");
+        return last_distance;
     }
-    return strongest_bin * range/numBins;
 }
+
 
 /** getOdomDistance(): find the distance to the assumed vertical wall 
             in the odom frame given the distance to the same wall in body frame.
