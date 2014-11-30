@@ -16,7 +16,7 @@ private:
     void sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& );
 
     double sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&);
-    double getOdomDistance(int, double, double);
+    double getOdomDistance(float, double, double);
     void publish_position_x(void);
     void publish_position_y(void);
 
@@ -34,7 +34,7 @@ private:
     int x_position_counter, y_position_counter;
     bool variance_x_found, variance_y_found;
     ros::Time imu_timestamp;
-    int binsperaxis;
+    int samples_per_direction;
 
     int calibration_length;
     double variance_x, variance_y;
