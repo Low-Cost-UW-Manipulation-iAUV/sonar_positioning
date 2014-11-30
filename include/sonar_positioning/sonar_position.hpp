@@ -27,6 +27,7 @@ private:
     ros::Publisher pub_position_y;
 
     double yaw, pitch, roll;
+    double last_distance;
     
     double x_position, y_position;
     double x_position_sum, y_position_sum;
