@@ -82,11 +82,13 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
 
     int binsperaxis = message->data[1];
+    double angle = message->date[0]/6392*360; ///THIS WILL NBEED CHANGING
+    ROS_INFO("Angle is: %f - change the angle value soon!!!", angle);
     // extract the important data from the sonar data
     int d_hypot = sonar2Distance(message);
 
     // if we are looking ahead (along x)
-    if(message->data[0] <= 45 && message->data[0] >= -45) {
+    if(angle <= 45 && angle >= -45) {
         double odom_dist = getOdomDistance(d_hypot, (yaw + message->data[0]), pitch);
         x_position_counter ++;
         x_position_sum += odom_dist;
@@ -121,7 +123,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             }
 
         } // We are looking at the y axis
-    } else if (message->data[0] <= 135 && message->data[0] >45 ) {
+    } else if (angle <= 135 && angle >45 ) {
         // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
             // We first look top down: undo the yaw and sonar angle. And then look at it from the side to counteract the current roll.
         double odom_dist = getOdomDistance(d_hypot, (yaw + message->data[0]), roll);
