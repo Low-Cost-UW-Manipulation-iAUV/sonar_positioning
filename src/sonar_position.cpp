@@ -83,7 +83,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 
     int binsperaxis = message->data[1];
     double angle = message->data[0]/6392*360; ///THIS WILL NBEED CHANGING
-    ROS_INFO("Angle is: %f - change the angle value soon!!!", angle);
+    ROS_INFO("step is: %d Angle is: %f - change the angle value soon!!!",message->data[0], angle);
     // extract the important data from the sonar data
     int d_hypot = sonar2Distance(message);
 
