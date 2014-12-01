@@ -8,6 +8,8 @@
 #define SURGE 1
 #define SWAY 2
 
+#define STEPSPERROTATION 6400.0   // The sonar outputs stepper position in 1/16 gradians or gon (400 gon /rotation).
+                                // Thus a full rotation is 6400 steps.
 #define DEG2RAD (M_PI/180)
 namespace sonar {
 
@@ -91,7 +93,7 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
 
     
-    double steps_to_angle = ( (double) message->data[0] )* ( (M_PI*2) / 6392.0); ///THIS WILL NBEED CHANGING
+    double steps_to_angle = ( (double) message->data[0] )* ( (M_PI*2) / STEPSPERROTATION); ///THIS WILL NBEED CHANGING
     ROS_INFO("step is: %d Angle is: %f - change the angle value soon!!!", message->data[0], steps_to_angle);
     // extract the imortant data from the sonar data
     float d_hypot = sonar2Distance(message);
