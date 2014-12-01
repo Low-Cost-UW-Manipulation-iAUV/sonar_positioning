@@ -94,7 +94,6 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 
     
     double steps_to_angle = ( (double) message->data[0] )* ( (M_PI*2) / STEPSPERROTATION); ///THIS WILL NBEED CHANGING
-    ROS_INFO("step is: %d Angle is: %f - change the angle value soon!!!", message->data[0], steps_to_angle);
     // extract the imortant data from the sonar data
     float d_hypot = sonar2Distance(message);
     ROS_INFO("hypo distance is %f", d_hypot);
