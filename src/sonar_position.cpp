@@ -13,7 +13,7 @@ namespace sonar {
 
 sonar_position::sonar_position(ros::NodeHandle nh) {
     nh_ = nh;
-    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this);
+    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/imu/data", 1, &sonar_position::sub_callback_imu, this);
     sub_sonar = nh_.subscribe<std_msgs::Int32MultiArray>("/sonarData", 1, &sonar_position::sub_callback_sonar, this);
 
     pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position/x", 100);
