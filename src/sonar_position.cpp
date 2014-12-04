@@ -3,16 +3,19 @@
 
 
 #include <tf/transform_datatypes.h>
+#include "std_msgs/String.h"
 #include <math.h>
+#include <sstream>
 
 #define SURGE 1
 #define SWAY 2
 
-#define STEPSPERROTATION 6400.0     // The sonar outputs stepper position in 1/16 gradians or gon (400 gon /rotation).
+#define STEPSPERROTATION 6400     // The sonar outputs stepper position in 1/16 gradians or gon (400 gon /rotation).
                                     // Thus a full rotation is 6400 steps.
 
+#define DEGREESPERROTATION 360
 #define STD_ANGLE_PLUS 0.1745329252  //10°
-#define STD_ANGLE_MINUS 3.054326191  //-10°
+#define STD_ANGLE_MINUS 6.108652382  //350°
 #define DEG2RAD (M_PI/180)
 namespace sonar {
 
@@ -23,7 +26,8 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
 
     pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position/x", 100);
     pub_position_y = nh_.advertise<nav_msgs::Odometry>("/sonar/position/y", 100);
-
+    pub_sonar_command = nh_.advertise<std_msgs::String>("/sonarRequest", 5);
+    not_yet_configured = true;
 
     if (!nh_.getParam("/sonar/calibration_length", calibration_length)) {
 
@@ -57,8 +61,8 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
 
         ROS_ERROR("Sonar Position: Could not find beam_width_y, assuming +-10Deg either side of the y axis. \n");
         
-        beam_width_y[0] = (STD_ANGLE_PLUS + M_PI/2 ); // = 100° = 1777.7 steps -  left side of the range we want to consider
-        beam_width_y[1] = (STD_ANGLE_MINUS + M_PI/2); // = 80° = 1422.2 steps -  right side of what we want to consider
+        beam_width_y[0] = (M_PI/2 + STD_ANGLE_PLUS); // = 100° = 1777.7 steps -  left side of the range we want to consider
+        beam_width_y[1] = (M_PI/2 - STD_ANGLE_PLUS); // = 80° = 1422.2 steps -  right side of what we want to consider
         nh_.setParam("/sonar/samples_per_direction", beam_width_y);
     }     
     x_variance_data.clear();
@@ -95,13 +99,29 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         variance_y_found = false;
     } else { // if it is available skip the determination
         variance_y_found = true;
-    }    
+    }
+
+
 
 
 }
 
 sonar_position::~sonar_position() {
 
+}
+
+/**configure_sonar():
+*/
+void sonar_position::configure_sonar(void) {
+    // send the sonar the command to only sweep our required area.
+    std_msgs::String sonar_command;    
+
+    std::ostringstream temp;
+    temp << "leftlim="<< rad2steps(beam_width_y[0]) <<",rightlim="<< rad2steps(beam_width_x[1]) <<"";
+    sonar_command.data = temp.str();
+    ROS_INFO("beam_width_y[0]: %f, beam_width_x[1]: %f", beam_width_y[0], beam_width_x[1]);
+    ROS_INFO(sonar_command.data.c_str());
+    pub_sonar_command.publish(sonar_command);  
 }
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
@@ -114,25 +134,27 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
     imu_timestamp = message->header.stamp; 
 }
 
+
 /** sub_callback_sonar(): transforms the sonar data and publishes it as a position update for the sensor fusion.
 */
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
-    double steps_to_angle;
-    if (message->data[0] <=3200) {
-        steps_to_angle = (-1 *( (double) message->data[0] ) + 3200) * ((2*M_PI)/6400);
+    double angle_rad = steps2rad(message->data[0]);
 
-    } else { // so if (message->data[1] > 3200)
-         steps_to_angle = (-1*( (double) message->data[0] ) + 9600) * ((2*M_PI)/6400);
 
-    }
+    ROS_INFO("angle_rad: %f, steps: %d", angle_rad, message->data[0]);
     // extract the imortant data from the sonar data
     float d_hypot = sonar2Distance(message);
     //ROS_INFO("hypo distance is %f", d_hypot);
+    if(not_yet_configured==true) {
+        configure_sonar();
+        not_yet_configured = false;
+    }
+
 
     // if we are looking ahead (along x). i.e.
     //                  <= 10°             &&                >= 0°  OR                  <= 360°                       >=350°
-    if( (steps_to_angle <= beam_width_x[0] && steps_to_angle >= 0 ) ||  (steps_to_angle <= (2*M_PI) && steps_to_angle >= beam_width_x[1] ) ) {
-        double odom_dist = getOdomDistance(d_hypot, (yaw + steps_to_angle), pitch);
+    if( (angle_rad <= beam_width_x[0] && angle_rad >= 0 ) ||  (angle_rad <= (2*M_PI) && angle_rad >= beam_width_x[1] ) ) {
+        double odom_dist = getOdomDistance(d_hypot, (yaw + angle_rad), pitch);
 
         x_position_counter ++;
         x_position_sum += odom_dist;
@@ -168,10 +190,10 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 
         } // We are looking at the y axis. i.e.
     //                        <= 100°            &&                >= 80°
-    } else if (steps_to_angle <= beam_width_y[0] && steps_to_angle >= beam_width_y[1] ) {
+    } else if (angle_rad <= beam_width_y[0] && angle_rad >= beam_width_y[1] ) {
         // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
             // We first look top down: undo the yaw and sonar angle. And then look at it from the side to counteract the current roll.
-        double odom_dist = getOdomDistance(d_hypot, (yaw + steps_to_angle), roll);
+        double odom_dist = getOdomDistance(d_hypot, (yaw + angle_rad), roll);
 
         y_position_counter ++;
         y_position_sum += odom_dist;
@@ -243,6 +265,7 @@ double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&
         
     } else {
         ROS_ERROR("Message did not contain proper info. - returning last_distance");
+        ROS_ERROR("debug info: data.size(): %lu, numBins: %d, range: %f",message->data.size(),numBins,range );
         return last_distance;
     }
 }
@@ -315,10 +338,38 @@ double sonar_position::std2(const std::vector<double> vec, const double mean) {
     
 }
 
+
+/**steps2rad(): conversts the micron steps into rad
+*/
+double sonar_position::steps2rad(int steps) {
+    if (steps <=3200) {
+        return (-1 *( (double) steps ) + 3200) * ((2*M_PI)/STEPSPERROTATION);
+    } else { // so if (message->data[1] > 3200)
+        return(-1*( (double) steps ) + 9600) * ((2*M_PI)/STEPSPERROTATION);
+    }
+}
+
+/**rad2steps(): converts rad into the micron steps
+*/
+int sonar_position::rad2steps(double rad) {
+    if (rad <=M_PI) {
+        return (int) (3200 - (rad * (3200/M_PI) ) );
+    } else { // so if (message->data[1] > 3200)
+        return (int) (9600 - (rad * (3200/M_PI) ) );
+    }
+}
+
+/**deg2steps(): converts degrees into the micron steps
+*/
+int sonar_position::deg2steps(double deg) {
+    if (deg <=180) {
+        return (int) (3200 - (deg * (STEPSPERROTATION/DEGREESPERROTATION) ) );
+    } else { // so if (message->data[1] > 3200)
+        return (int) (9600 - (deg * (STEPSPERROTATION/DEGREESPERROTATION) ) );
+    }
+}
+
 }  //end of namespace
-
-
-
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "sonar_positioning");
@@ -327,7 +378,6 @@ int main(int argc, char **argv) {
 
     ros::AsyncSpinner spinner(2);
     spinner.start();
-
     // create the instance of the class
     sonar::sonar_position orange_box(nh);
 
