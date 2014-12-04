@@ -39,6 +39,9 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         nh_.setParam("/sonar/samples_per_direction", samples_per_direction);
     }
 
+    beam_width_x.clear();
+    beam_width_x.resize(2,0);
+
     if (!nh_.getParamCached("/sonar/beam_width/x", beam_width_x)) {
 
         ROS_ERROR("Sonar Position: Could not find beam_width_x, assuming +-10Deg either side of the x axis. \n");
@@ -47,14 +50,16 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         beam_width_x[1] = STD_ANGLE_MINUS; // = 350° = 3377.7 steps -  right side of what we want to consider
         nh_.setParam("/sonar/samples_per_direction", beam_width_x);
     } 
-
+    
+    beam_width_y.clear();
+    beam_width_y.resize(2,0);
     if (!nh_.getParamCached("/sonar/beam_width/y", beam_width_y)) {
 
         ROS_ERROR("Sonar Position: Could not find beam_width_y, assuming +-10Deg either side of the y axis. \n");
         
         beam_width_y[0] = (STD_ANGLE_PLUS + M_PI/2 ); // = 100° = 1777.7 steps -  left side of the range we want to consider
         beam_width_y[1] = (STD_ANGLE_MINUS + M_PI/2); // = 80° = 1422.2 steps -  right side of what we want to consider
-        nh_.setParam("/sonar/samples_per_direction", beam_width_x);
+        nh_.setParam("/sonar/samples_per_direction", beam_width_y);
     }     
     x_variance_data.clear();
     x_variance_data.reserve(calibration_length);
@@ -114,9 +119,9 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
     double steps_to_angle;
     if (message->data[0] <=3200) {
-        steps_to_angle = (-1*( (double) message->data[0] ) + 3200) * ((2*M_PI)/6400);
+        steps_to_angle = (-1 *( (double) message->data[0] ) + 3200) * ((2*M_PI)/6400);
 
-    }else { // so if (message->data[1] > 3200)
+    } else { // so if (message->data[1] > 3200)
          steps_to_angle = (-1*( (double) message->data[0] ) + 9600) * ((2*M_PI)/6400);
 
     }

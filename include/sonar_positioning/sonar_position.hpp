@@ -42,8 +42,8 @@ private:
     std::vector<double> y_variance_data;
 
     // The width of what we call forwards in RADIANS. i.e. from +10deg to -10deg. View is top down with right hand frame
-    std::vector<double> beam_width_x[2];
-    std::vector<double> beam_width_y[2];
+    std::vector<double> beam_width_x;
+    std::vector<double> beam_width_y;
 
 
     double mean(const std::vector<double>);
