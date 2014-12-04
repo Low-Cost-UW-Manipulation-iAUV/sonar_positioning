@@ -8,8 +8,11 @@
 #define SURGE 1
 #define SWAY 2
 
-#define STEPSPERROTATION 6400.0   // The sonar outputs stepper position in 1/16 gradians or gon (400 gon /rotation).
-                                // Thus a full rotation is 6400 steps.
+#define STEPSPERROTATION 6400.0     // The sonar outputs stepper position in 1/16 gradians or gon (400 gon /rotation).
+                                    // Thus a full rotation is 6400 steps.
+
+#define STD_ANGLE_PLUS 0.1745329252  //10°
+#define STD_ANGLE_MINUS 3.054326191  //-10°
 #define DEG2RAD (M_PI/180)
 namespace sonar {
 
@@ -29,12 +32,30 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         nh_.setParam("/sonar/calibration_length", calibration_length);
     }  
 
-    if (!nh_.getParam("/sonar/samples_per_direction", samples_per_direction)) {
+    if (!nh_.getParamCached("/sonar/samples_per_direction", samples_per_direction)) {
 
         ROS_ERROR("Sonar Position: Could not find samples_per_direction, assuming 5. \n");
         samples_per_direction = 20;
         nh_.setParam("/sonar/samples_per_direction", samples_per_direction);
-    }  
+    }
+
+    if (!nh_.getParamCached("/sonar/beam_width/x", beam_width_x)) {
+
+        ROS_ERROR("Sonar Position: Could not find beam_width_x, assuming +-10Deg either side of the x axis. \n");
+        
+        beam_width_x[0] = STD_ANGLE_PLUS ; // = +10deg = 3022.2 steps -  left side of the range we want to consider
+        beam_width_x[1] = STD_ANGLE_MINUS; // = 350° = 3377.7 steps -  right side of what we want to consider
+        nh_.setParam("/sonar/samples_per_direction", beam_width_x);
+    } 
+
+    if (!nh_.getParamCached("/sonar/beam_width/y", beam_width_y)) {
+
+        ROS_ERROR("Sonar Position: Could not find beam_width_y, assuming +-10Deg either side of the y axis. \n");
+        
+        beam_width_y[0] = (STD_ANGLE_PLUS + M_PI/2 ); // = 100° = 1777.7 steps -  left side of the range we want to consider
+        beam_width_y[1] = (STD_ANGLE_MINUS + M_PI/2); // = 80° = 1422.2 steps -  right side of what we want to consider
+        nh_.setParam("/sonar/samples_per_direction", beam_width_x);
+    }     
     x_variance_data.clear();
     x_variance_data.reserve(calibration_length);
     y_variance_data.clear();
@@ -91,15 +112,21 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 /** sub_callback_sonar(): transforms the sonar data and publishes it as a position update for the sensor fusion.
 */
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
+    double steps_to_angle;
+    if (message->data[0] <=3200) {
+        steps_to_angle = (-1*( (double) message->data[0] ) + 3200) * ((2*M_PI)/6400);
 
-    
-    double steps_to_angle = ( (double) message->data[0] )* ( (M_PI*2) / STEPSPERROTATION); ///THIS WILL NBEED CHANGING
+    }else { // so if (message->data[1] > 3200)
+         steps_to_angle = (-1*( (double) message->data[0] ) + 9600) * ((2*M_PI)/6400);
+
+    }
     // extract the imortant data from the sonar data
     float d_hypot = sonar2Distance(message);
-    ROS_INFO("hypo distance is %f", d_hypot);
+    //ROS_INFO("hypo distance is %f", d_hypot);
 
-    // if we are looking ahead (along x)
-    if( (steps_to_angle >= (1.75*M_PI) && steps_to_angle <= (2*M_PI) ) || (steps_to_angle >= 0 && steps_to_angle <= (M_PI/4) ) ) {
+    // if we are looking ahead (along x). i.e.
+    //                  <= 10°             &&                >= 0°  OR                  <= 360°                       >=350°
+    if( (steps_to_angle <= beam_width_x[0] && steps_to_angle >= 0 ) ||  (steps_to_angle <= (2*M_PI) && steps_to_angle >= beam_width_x[1] ) ) {
         double odom_dist = getOdomDistance(d_hypot, (yaw + steps_to_angle), pitch);
 
         x_position_counter ++;
@@ -134,8 +161,9 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
                 variance_x_found = true;
             }
 
-        } // We are looking at the y axis
-    } else if (steps_to_angle > (M_PI/4) &&  steps_to_angle < (M_PI*0.75) ) {
+        } // We are looking at the y axis. i.e.
+    //                        <= 100°            &&                >= 80°
+    } else if (steps_to_angle <= beam_width_y[0] && steps_to_angle >= beam_width_y[1] ) {
         // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
             // We first look top down: undo the yaw and sonar angle. And then look at it from the side to counteract the current roll.
         double odom_dist = getOdomDistance(d_hypot, (yaw + steps_to_angle), roll);
