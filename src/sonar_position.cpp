@@ -141,10 +141,11 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     double angle_rad = steps2rad(message->data[0]);
 
 
-    ROS_INFO("angle_rad: %f, steps: %d", angle_rad, message->data[0]);
     // extract the imortant data from the sonar data
     float d_hypot = sonar2Distance(message);
     //ROS_INFO("hypo distance is %f", d_hypot);
+    ROS_INFO("angle_deg: %f, steps: %d, hypot_dist: %f", angle_rad/DEG2RAD, message->data[0], d_hypot);
+
     if(not_yet_configured==true) {
         configure_sonar();
         not_yet_configured = false;
@@ -169,7 +170,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             // is the x axis measurement done? 
             if(x_position_counter >= samples_per_direction) {
                 // calculate the mean of the data.
-                x_position = x_position_sum / x_position_counter;  
+                x_position = x_position_sum / (double) x_position_counter;  
 
                 // publish it              
                 publish_position_x();
@@ -178,7 +179,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             }
         } else { // we haven't got any variance data.
             if(x_variance_data.size() < calibration_length) {
-                x_variance_data.push_back(x_position);
+                x_variance_data.push_back(odom_dist);
                 ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d",x_variance_data.size(), calibration_length);
             } else {
                 variance_x = pow( std2(x_variance_data, mean(x_variance_data) ), 2);
@@ -192,8 +193,8 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     //                        <= 100°            &&                >= 80°
     } else if (angle_rad <= beam_width_y[0] && angle_rad >= beam_width_y[1] ) {
         // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
-            // We first look top down: undo the yaw and sonar angle. And then look at it from the side to counteract the current roll.
-        double odom_dist = getOdomDistance(d_hypot, (yaw + angle_rad), roll);
+            // We first look top down: undo the yaw and sonar angle. Here we have to take into consideration that we are offset by +90deg.... And then look at it from the side to counteract the current roll.
+        double odom_dist = getOdomDistance(d_hypot, (M_PI/2 -(yaw + angle_rad)), roll);
 
         y_position_counter ++;
         y_position_sum += odom_dist;
@@ -208,7 +209,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             // is the x axis measurement done? 
             if(y_position_counter >= samples_per_direction) {
                 // calculate the mean of the data.
-                y_position = y_position_sum / y_position_counter;  
+                y_position = y_position_sum / (double) y_position_counter;  
 
                 // publish it              
                 publish_position_y();
@@ -217,8 +218,9 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             }
         } else { // we haven't got any variance data.
             if(y_variance_data.size() < calibration_length) {
-                y_variance_data.push_back(y_position);
+                y_variance_data.push_back(odom_dist);
                 ROS_INFO("sonar_position: Determining Sonar variance on y - Sample %lu of %d",y_variance_data.size(), calibration_length);                
+
             } else {
                 variance_y = pow( std2(y_variance_data, mean(y_variance_data) ), 2);
                 ROS_INFO("sonar_position: Variance of y is %f, stored on param server", variance_y);
@@ -317,11 +319,13 @@ void sonar_position::publish_position_y(void) {
 double sonar_position::mean(const std::vector<double> vec) {
     double sum = 0;
     unsigned int size = 0;
-    for (typename std::vector<double>::const_iterator it = vec.begin(); it!=vec.end(); ++it, ++size) { 
+    for (typename std::vector<double>::const_iterator it = vec.begin(); it!=vec.end(); ++it, ++size) 
+    { 
         sum += (*it);
         // if size is not == 0, divide by size, else return 0
     }
-    return (size)?(sum/size):0;
+
+    return (size)?(sum/(double) size):0;
 }
 
 /** std2(): find the std_deviation across our current_range
@@ -334,7 +338,7 @@ double sonar_position::std2(const std::vector<double> vec, const double mean) {
          ++size;
     }
     // if size is not == 0, divide by size, else return 0            
-    return size?std::sqrt(sum/size):-1;
+    return size?std::sqrt(sum/(double)size):-1;
     
 }
 
