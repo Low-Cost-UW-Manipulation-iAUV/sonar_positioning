@@ -6,7 +6,7 @@ rsync -avzh ./include/sonar_positioning/*.hpp 	bmt:/home/devel/catkin_ws/src/son
 rsync -avzh CMakeLists.txt 						bmt:/home/devel/catkin_ws/src/sonar_positioning/
 rsync -avzh *.xml 								bmt:/home/devel/catkin_ws/src/sonar_positioning/
 
-rsync -avzh *.launch	 						bmt:/home/devel/catkin_ws/src/sonar_positioning/
+rsync -avzh ./launch/*.launch	 						bmt:/home/devel/catkin_ws/src/sonar_positioning/launch/
 rsync -avzh *.yaml		 						bmt:/home/devel/catkin_ws/src/sonar_positioning/
 rsync -avzh *.md								bmt:/home/devel/catkin_ws/src/sonar_positioning/
 rsync -avzh ./urdf/*.urdf						bmt:/home/devel/catkin_ws/src/sonar_positioning/urdf/
