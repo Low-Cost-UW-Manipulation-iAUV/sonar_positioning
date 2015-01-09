@@ -24,24 +24,18 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
     sub_imu = nh_.subscribe<nav_msgs::Odometry>("/imu/data", 1, &sonar_position::sub_callback_imu, this);
     sub_sonar = nh_.subscribe<std_msgs::Int32MultiArray>("/sonarData", 1, &sonar_position::sub_callback_sonar, this);
 
-    pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position/x", 100);
-    pub_position_y = nh_.advertise<nav_msgs::Odometry>("/sonar/position/y", 100);
+    pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position/x", 10);
+    pub_position_y = nh_.advertise<nav_msgs::Odometry>("/sonar/position/y", 10);
     pub_sonar_command = nh_.advertise<std_msgs::String>("/sonarRequest", 5);
     not_yet_configured = true;
 
     if (!nh_.getParam("/sonar/calibration_length", calibration_length)) {
 
-        ROS_ERROR("Sonar Position: Could not find calibration_length, assuming 1000. \n");
-        calibration_length = 200;
+        ROS_ERROR("Sonar Position: Could not find calibration_length, assuming 20. \n");
+        calibration_length = 20;
         nh_.setParam("/sonar/calibration_length", calibration_length);
     }  
 
-    if (!nh_.getParamCached("/sonar/samples_per_direction", samples_per_direction)) {
-
-        ROS_ERROR("Sonar Position: Could not find samples_per_direction, assuming 5. \n");
-        samples_per_direction = 20;
-        nh_.setParam("/sonar/samples_per_direction", samples_per_direction);
-    }
 
     beam_width_x.clear();
     beam_width_x.resize(2,0);
@@ -52,7 +46,7 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         
         beam_width_x[0] = STD_ANGLE_PLUS ; // = +10deg = 3022.2 steps -  left side of the range we want to consider
         beam_width_x[1] = STD_ANGLE_MINUS; // = 350° = 3377.7 steps -  right side of what we want to consider
-        nh_.setParam("/sonar/samples_per_direction", beam_width_x);
+        nh_.setParam("/sonar/beam_width/x", beam_width_x);
     } 
     
     beam_width_y.clear();
@@ -63,24 +57,37 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
         
         beam_width_y[0] = (M_PI/2 + STD_ANGLE_PLUS); // = 100° = 1777.7 steps -  left side of the range we want to consider
         beam_width_y[1] = (M_PI/2 - STD_ANGLE_PLUS); // = 80° = 1422.2 steps -  right side of what we want to consider
-        nh_.setParam("/sonar/samples_per_direction", beam_width_y);
+        nh_.setParam("/sonar/beam_width/y", beam_width_y);
     }     
     x_variance_data.clear();
     x_variance_data.reserve(calibration_length);
     y_variance_data.clear();
     y_variance_data.reserve(calibration_length);
 
+    if (!nh_.getParamCached("/sonar/consecutive_bin_value_threshold", consecutive_bin_value_threshold)) {
+
+        ROS_ERROR("Sonar Position: Could not find consecutive_bin_value_threshold, assuming 100. \n");
+        consecutive_bin_value_threshold = 100;
+        nh_.setParam("/sonar/consecutive_bin_value_threshold", consecutive_bin_value_threshold);
+    }
+
+
+    if (!nh_.getParamCached("/sonar/wall_threshold", wall_threshold)) {
+
+        ROS_ERROR("Sonar Position: Could not find threshold, assuming 3. \n");
+        wall_threshold = 3;
+        nh_.setParam("/sonar/wall_threshold", wall_threshold);
+    }
+
     yaw = 0;
     pitch = 0;
     roll = 0;
 
-    x_position_sum = 0;
-    y_position_sum = 0;
-
-    x_position_counter = 1;
-    y_position_counter = 1;
 
     last_distance = 0;
+    variance_x_found = false;
+    variance_y_found = false;
+
     // check if the variance for x is available on the parameter server
     if (!nh_.getParam("/sonar/variance/x", variance_x)) {
 
@@ -138,49 +145,33 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 /** sub_callback_sonar(): transforms the sonar data and publishes it as a position update for the sensor fusion.
 */
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
-    double angle_rad = steps2rad(message->data[0]);
-
-
-    // extract the imortant data from the sonar data
-    float d_hypot = sonar2Distance(message);
-    //ROS_INFO("hypo distance is %f", d_hypot);
-    ROS_INFO("angle_deg: %f, steps: %d, hypot_dist: %f", angle_rad/DEG2RAD, message->data[0], d_hypot);
-
-    if(not_yet_configured==true) {
+    if(not_yet_configured == true) {
         configure_sonar();
         not_yet_configured = false;
     }
 
+    double angle_rad = steps2rad(message->data[0]);
 
+    // extract the imortant data from the sonar data
+    double d_hypot = sonar2Distance(message);
+    ROS_INFO("sonar_position - angle: %3f, d_hypot: %f",angle_rad/DEG2RAD, d_hypot);
+
+    nh_.getParamCached("/sonar/beam_width/x", beam_width_x);
+    nh_.getParamCached("/sonar/beam_width/y", beam_width_y);
     // if we are looking ahead (along x). i.e.
     //                  <= 10°             &&                >= 0°  OR                  <= 360°                       >=350°
-    if( (angle_rad <= beam_width_x[0] && angle_rad >= 0 ) ||  (angle_rad <= (2*M_PI) && angle_rad >= beam_width_x[1] ) ) {
+    if( d_hypot != 0 && ( (angle_rad <= beam_width_x[0] && angle_rad >= 0 ) ||  (angle_rad <= (2*M_PI) && angle_rad >= beam_width_x[1] ) ) ) {
         double odom_dist = getOdomDistance(d_hypot, (yaw + angle_rad), pitch);
-
-        x_position_counter ++;
-        x_position_sum += odom_dist;
-
-        // this should never happen
-        if(x_position_counter == 0) {
-            x_position_counter = 1;
-            ROS_ERROR("sonar_position: the position counter x was somehow set to 0... This should NEVER happen.");
-        } 
+        ROS_INFO("sonar_position - x - angle: %3f, d_hypot: %1.4f, odom_dist: %1.4f", angle_rad/DEG2RAD, d_hypot, odom_dist);
         // if we know the variance of the sonar positioning data
         if(variance_x_found == true) {
-            // is the x axis measurement done? 
-            if(x_position_counter >= samples_per_direction) {
-                // calculate the mean of the data.
-                x_position = x_position_sum / (double) x_position_counter;  
-
-                // publish it              
-                publish_position_x();
-                x_position_counter = 1;
-                x_position_sum = odom_dist;
-            }
+            x_position = odom_dist;
+            publish_position_x();
         } else { // we haven't got any variance data.
             if(x_variance_data.size() < calibration_length) {
                 x_variance_data.push_back(odom_dist);
-                ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d",x_variance_data.size(), calibration_length);
+                ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d", x_variance_data.size(), calibration_length);
+            // we've stored enough, lets calculate the variance
             } else {
                 variance_x = pow( std2(x_variance_data, mean(x_variance_data) ), 2);
                 ROS_INFO("sonar_position: Variance of x is %f, stored on param server", variance_x);
@@ -191,36 +182,24 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 
         } // We are looking at the y axis. i.e.
     //                        <= 100°            &&                >= 80°
-    } else if (angle_rad <= beam_width_y[0] && angle_rad >= beam_width_y[1] ) {
+    } else if (d_hypot != 0 && (angle_rad <= beam_width_y[0] && angle_rad >= beam_width_y[1] ) ) {
         // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
             // We first look top down: undo the yaw and sonar angle. Here we have to take into consideration that we are offset by +90deg.... And then look at it from the side to counteract the current roll.
         double odom_dist = getOdomDistance(d_hypot, (M_PI/2 -(yaw + angle_rad)), roll);
+        ROS_INFO("sonar_position - y - angle: %3f, d_hypot: %1.4f, odom_dist: %1.4f", angle_rad/DEG2RAD, d_hypot, odom_dist);
 
-        y_position_counter ++;
-        y_position_sum += odom_dist;
 
-        // this should never happen
-        if(y_position_counter == 0) {
-            y_position_counter = 1;
-            ROS_ERROR("sonar_position: the position counter y was somehow set to 0... This should NEVER happen.");
-        } 
         // if we know the variance of the sonar positioning data
         if(variance_y_found == true) {
             // is the x axis measurement done? 
-            if(y_position_counter >= samples_per_direction) {
-                // calculate the mean of the data.
-                y_position = y_position_sum / (double) y_position_counter;  
-
+                y_position = odom_dist;  
                 // publish it              
                 publish_position_y();
-                y_position_counter = 1;
-                y_position_sum = odom_dist;
-            }
         } else { // we haven't got any variance data.
             if(y_variance_data.size() < calibration_length) {
                 y_variance_data.push_back(odom_dist);
                 ROS_INFO("sonar_position: Determining Sonar variance on y - Sample %lu of %d",y_variance_data.size(), calibration_length);                
-
+            // we've stored enough, lets calculate the variance
             } else {
                 variance_y = pow( std2(y_variance_data, mean(y_variance_data) ), 2);
                 ROS_INFO("sonar_position: Variance of y is %f, stored on param server", variance_y);
@@ -230,44 +209,57 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
             }
         }
     }
-
 }
 
 /** sonar2Distance(): Find the strongest signal in the sonar array.
 */
 double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr& message) {
+    nh_.getParamCached("/sonar/consecutive_bin_value_threshold", consecutive_bin_value_threshold);
+    nh_.getParamCached("/sonar/wall_threshold", wall_threshold);
     // Find the number of data bins
     int numBins = message->data[1];
     // the maximum distance to be found in dM
-    double range = message->data[2]/10.0;
+    double range = message->data[2]/10;
     // ensure we are staying within the message and that neither of these numbers are NaN
     if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins != 0) ) {
 
-        int max = 0;
-        int strongest_bin = 0;
+        double strongest_bin = 0;
         // find the strongest reflection
+        int counter_peaks = 0;
         for (int x=3; x < (numBins+3); x++) {
 
-            if (message->data[x] > max) {
-                max = message->data[x];
-                strongest_bin = (x-2);
+            // count consecutive values higher than the threshold
+            if (message->data[x] >= consecutive_bin_value_threshold) {
+                counter_peaks ++;
+            } else {
+                counter_peaks = 0;
+            }
+
+            // find the average value once we've got enough consecutive values
+            if (counter_peaks >= wall_threshold) {
+                int start = x - counter_peaks + 1;
+                strongest_bin = ( ((double)(x + start) ) / 2.0 );
+                //and shift it back so the number of bins is correct
+                strongest_bin = strongest_bin - 3;
+                // make sure we don't read any reflections which arrive later than the first reflection.
+                break;
             }
         }
 
         // make sure the stronges reflection is also non NaN
         if(isnan(strongest_bin) == false) {
                     // turn range back into meters from dM and return the strongest reflection distance
-            last_distance = (double) strongest_bin * (range / (double) numBins);
+            last_distance = strongest_bin * (range / (double) numBins);
             return last_distance;
         } else {
-            ROS_ERROR("Message did not contain a proper distance info. - returning last_distance");
+            ROS_ERROR("Strongest_bin was broken. - returning last_distance");
 
             return last_distance;
         }
         
     } else {
         ROS_ERROR("Message did not contain proper info. - returning last_distance");
-        ROS_ERROR("debug info: data.size(): %lu, numBins: %d, range: %f",message->data.size(),numBins,range );
+        //ROS_ERROR("debug info: data.size(): %lu, numBins: %d, range: %f", message->data.size(), numBins, range );
         return last_distance;
     }
 }
@@ -312,6 +304,7 @@ void sonar_position::publish_position_y(void) {
     sonar_position.pose.covariance[7] = variance_y;
 
     pub_position_y.publish(sonar_position);
+
 }
 
 /** mean(): calculates the mean

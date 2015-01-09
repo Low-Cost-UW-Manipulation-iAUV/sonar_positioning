@@ -30,14 +30,13 @@ private:
     double last_distance;
     
     double x_position, y_position;
-    double x_position_sum, y_position_sum;
-    int x_position_counter, y_position_counter;
     bool variance_x_found, variance_y_found;
     bool not_yet_configured;
     ros::Time imu_timestamp;
-    int samples_per_direction;
 
     int calibration_length;
+    int consecutive_bin_value_threshold;
+    int wall_threshold;
     double variance_x, variance_y;
     std::vector<double> x_variance_data;
     std::vector<double> y_variance_data;
