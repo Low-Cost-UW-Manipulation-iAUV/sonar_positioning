@@ -301,7 +301,7 @@ void sonar_position::publish_position_y(void) {
     sonar_position.pose.pose.position.y = y_position;
     sonar_position.pose.covariance.fill(0.0);
     // set the variance data for y
-    sonar_position.pose.covariance[7] = variance_y;
+    sonar_position.pose.covariance[1] = variance_y;
 
     pub_position_y.publish(sonar_position);
 
