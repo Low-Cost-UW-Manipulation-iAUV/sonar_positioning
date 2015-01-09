@@ -373,7 +373,7 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     /// An Async spinner creates another thread which will handle the event of this node being executed.
 
-    ros::AsyncSpinner spinner(2);
+    ros::AsyncSpinner spinner(1);
     spinner.start();
     // create the instance of the class
     sonar::sonar_position orange_box(nh);
