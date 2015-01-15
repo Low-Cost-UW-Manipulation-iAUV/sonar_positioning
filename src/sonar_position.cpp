@@ -284,7 +284,7 @@ double sonar_position::getOdomDistance(float body_position, double angle_a, doub
 void sonar_position::publish_position_x(void) {
     geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
-    sonar_position.header.frame_id = "odom";
+    sonar_position.header.frame_id = "SONAR_UWESUB";
     sonar_position.pose.pose.position.x = x_position;
     sonar_position.pose.covariance.fill(0.0);
     // set the variance data for x
@@ -297,7 +297,7 @@ void sonar_position::publish_position_x(void) {
 void sonar_position::publish_position_y(void) {
     geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
-    sonar_position.header.frame_id = "odom";
+    sonar_position.header.frame_id = "SONAR_UWESUB";
     sonar_position.pose.pose.position.y = y_position;
     sonar_position.pose.covariance.fill(0.0);
     // set the variance data for y
