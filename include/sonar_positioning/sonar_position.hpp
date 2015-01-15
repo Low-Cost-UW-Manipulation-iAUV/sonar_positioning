@@ -2,7 +2,8 @@
 #define __SONAR_POSITIONING__
 #include "ros/ros.h"
 #include "std_msgs/Int32MultiArray.h"
-#include "nav_msgs/Odometry.h"
+#include "geometry_msgs/PoseWithCovarianceStamped.h"
+#include "sensor_msgs/Imu.h"
 
 namespace sonar {
 
@@ -11,7 +12,7 @@ public:
     sonar_position(ros::NodeHandle);
     ~sonar_position();
 private:
-    void sub_callback_imu(const nav_msgs::Odometry::ConstPtr& );
+    void sub_callback_imu(const sensor_msgs::Imu::ConstPtr& );
     void sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& );
 
     double sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&);

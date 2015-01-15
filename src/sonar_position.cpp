@@ -21,11 +21,11 @@ namespace sonar {
 
 sonar_position::sonar_position(ros::NodeHandle nh) {
     nh_ = nh;
-    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/imu/data", 1, &sonar_position::sub_callback_imu, this);
+    sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this);
     sub_sonar = nh_.subscribe<std_msgs::Int32MultiArray>("/sonarData", 1, &sonar_position::sub_callback_sonar, this);
 
-    pub_position_x = nh_.advertise<nav_msgs::Odometry>("/sonar/position/x", 10);
-    pub_position_y = nh_.advertise<nav_msgs::Odometry>("/sonar/position/y", 10);
+    pub_position_x = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/sonar/position/x", 10);
+    pub_position_y = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/sonar/position/y", 10);
     pub_sonar_command = nh_.advertise<std_msgs::String>("/sonarRequest", 5);
     not_yet_configured = true;
 
@@ -133,9 +133,9 @@ void sonar_position::configure_sonar(void) {
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
 */
-void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& message) {
+void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message) {
 
-    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
+    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
     tf::Matrix3x3 m(q);
     m.getRPY(roll, yaw, pitch);    
     imu_timestamp = message->header.stamp; 
@@ -282,7 +282,7 @@ double sonar_position::getOdomDistance(float body_position, double angle_a, doub
 /** publish_position(): DOes what is says
 */
 void sonar_position::publish_position_x(void) {
-    nav_msgs::Odometry sonar_position;
+    geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
     sonar_position.header.frame_id = "odom";
     sonar_position.pose.pose.position.x = x_position;
@@ -295,7 +295,7 @@ void sonar_position::publish_position_x(void) {
 /** publish_position(): DOes what is says
 */
 void sonar_position::publish_position_y(void) {
-    nav_msgs::Odometry sonar_position;
+    geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
     sonar_position.header.frame_id = "odom";
     sonar_position.pose.pose.position.y = y_position;
