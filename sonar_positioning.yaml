@@ -1,0 +1,14 @@
+sonar: #The config file for the sonar_positioning
+    number_of_sonars: 2
+    sonar1:
+        listen_to: /sonarData1
+        publish_commands_to: /sonarRequest1
+        publish_data_to: /sonar/position1
+        parent_frame: SONAR_UWESUB_base
+        child_frame: SONAR_UWESUB_beam
+    sonar2:
+        listen_to: /sonarData2
+        publish_commands_to: /sonarRequest2
+        publish_data_to: /sonar/position2
+        parent_frame: SONAR_UWESUB_base
+        child_frame: SONAR_UWESUB_beam

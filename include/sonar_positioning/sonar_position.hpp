@@ -3,6 +3,7 @@
 #include "ros/ros.h"
 #include "std_msgs/Int32MultiArray.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
+#include <tf/transform_broadcaster.h>
 #include "sensor_msgs/Imu.h"
 
 namespace sonar {
@@ -20,6 +21,7 @@ private:
     void publish_position_x(void);
     void publish_position_y(void);
     void configure_sonar (void);
+    void publish_sonar_beam_transform(double,std::string,std::string);
 
     ros::NodeHandle nh_;
     ros::Subscriber sub_imu;
@@ -44,6 +46,9 @@ private:
     // The width of what we call forwards in RADIANS. i.e. from +10deg to -10deg. View is top down with right hand frame
     std::vector<double> beam_width_x;
     std::vector<double> beam_width_y;
+
+    // transform broadcaster that will publish the 'virtual' beam heading of the sonars
+    tf::TransformBroadcaster transformer;
 
     double steps2rad(int );
     int rad2steps(double );

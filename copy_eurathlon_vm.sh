@@ -7,7 +7,7 @@ rsync -avzh CMakeLists.txt 						eurathlon_vm:/home/euratlhon/uwesub_msc/src/son
 rsync -avzh *.xml 								eurathlon_vm:/home/euratlhon/uwesub_msc/src/sonar_positioning/
 
 rsync -avzh ./launch/*.launch	 				eurathlon_vm:/home/euratlhon/uwesub_msc/src/sonar_positioning/launch/
-#rsync -avzh *.yaml		 						eurathlon_vm:/home/euratlhon/uwesub_msc/src/sonar_positioning/
+rsync -avzh *.yaml		 						eurathlon_vm:/home/euratlhon/uwesub_msc/src/sonar_positioning/
 #rsync -avzh *.md								eurathlon_vm:/home/euratlhon/uwesub_msc/src/sonar_positioning/
 #rsync -avzh ./urdf/*.urdf						eurathlon_vm:/home/euratlhon/uwesub_msc/src/sonar_positioning/urdf/
 

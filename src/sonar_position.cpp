@@ -166,6 +166,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
         // if we know the variance of the sonar positioning data
         if(variance_x_found == true) {
             x_position = odom_dist;
+            x_angle = angle_rad;
             publish_position_x();
         } else { // we haven't got any variance data.
             if(x_variance_data.size() < calibration_length) {
@@ -192,7 +193,9 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
         // if we know the variance of the sonar positioning data
         if(variance_y_found == true) {
             // is the x axis measurement done? 
-                y_position = odom_dist;  
+                y_position = odom_dist;
+                y_angle = angle_rad;
+
                 // publish it              
                 publish_position_y();
         } else { // we haven't got any variance data.
@@ -282,9 +285,13 @@ double sonar_position::getOdomDistance(float body_position, double angle_a, doub
 /** publish_position(): DOes what is says
 */
 void sonar_position::publish_position_x(void) {
+
+    
+    publish_sonar_beam_transform(x_angle, "SONAR_UWESUB_beam", "SONAR_UWESUB_base");
+
     geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
-    sonar_position.header.frame_id = "SONAR_UWESUB";
+    sonar_position.header.frame_id = "SONAR_UWESUB_base";
     sonar_position.pose.pose.position.x = x_position;
     sonar_position.pose.covariance.fill(0.0);
     // set the variance data for x
@@ -295,6 +302,9 @@ void sonar_position::publish_position_x(void) {
 /** publish_position(): DOes what is says
 */
 void sonar_position::publish_position_y(void) {
+
+    publish_sonar_beam_transform(y_angle - M_PI/2, "SONAR_UWESUB_beam", "SONAR_UWESUB_base");    
+
     geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
     sonar_position.header.frame_id = "SONAR_UWESUB";
@@ -306,6 +316,19 @@ void sonar_position::publish_position_y(void) {
     pub_position_y.publish(sonar_position);
 
 }
+
+/** publish_sonar_beam_transform: rotates the sonar_beam frame to the sonar_base frame
+        publishes the transformation that will rotate the x,y position in the local sonar frame to the sonar base frame.
+*/
+void sonar_position::publish_sonar_beam_transform(double sonar_yaw_rad, std::string parent_frame_id, std::string child_frame_id) {
+    tf::Transform transform;
+    transform.setOrigin(tf::Vector3(0.0, 0.0, 0.0));
+    tf::Quaternion q;
+    q.setRPY(0, 0, sonar_yaw_rad);
+    transform.setRotation(q);
+    transformer.sendTransform(tf::StampedTransform(transform, ros::Time::now(), parent_frame_id, child_frame_id) );
+}
+
 
 /** mean(): calculates the mean
 */
