@@ -45,7 +45,6 @@ private:
     int consecutive_bin_value_threshold;
     int wall_threshold;
     double variance_x, variance_y;
-    bool x_variance_found, y_variance_found;
     std::vector<double> x_variance_data;
     std::vector<double> y_variance_data;
     // The width of what we call forwards in RADIANS. i.e. from +10deg to -10deg. View is top down with right hand frame

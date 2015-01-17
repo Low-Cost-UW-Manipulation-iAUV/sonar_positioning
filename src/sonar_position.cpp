@@ -97,7 +97,7 @@ void sonar_position::do_subs_pubs(void) {
         ROS_ERROR("Sonar Position: cant find which rostopic to publish commands to,error \n");
         ros::shutdown();
     } 
-    pub_sonar_command = nh_.advertise<std_msgs::String>(param_address.str(), 5);   
+    pub_sonar_command = nh_.advertise<std_msgs::String>(temp_string, 5);   
 }
 
 
@@ -284,7 +284,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     // THe sonar points now wherever we want it.
     process_sonar(message);
 
-    if ( (axis == "x" && x_variance_found) || (axis == "y" && y_variance_found) ){
+    if ( (axis == "x" && variance_x_found) || (axis == "y" && variance_y_found) ){
         publish_position(axis);
     }
 }
@@ -315,7 +315,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     // If we are working for the x axis
     if(axis == "x") {
 
-        if(x_variance_found == true) {
+        if(variance_x_found == true) {
             position = d_hypot;
             angle = angle_rad;
             return EXIT_SUCCESS;
@@ -333,7 +333,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
         }
 
     } else if(axis == "y") {
-       if(y_variance_found == true) {
+       if(variance_y_found == true) {
             position = d_hypot;
             angle = angle_rad;
             return EXIT_SUCCESS;
@@ -358,7 +358,7 @@ int sonar_position::store_variance(double variance, std::string variable_name) {
 
     param_address.clear();
     param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/variance/variable_name";
+    param_address << "/sonar/" << sonar_name_ << "/variance/" << variable_name;
     nh_.setParam(param_address.str(), variance);
 
     double temp = 0;
@@ -366,7 +366,7 @@ int sonar_position::store_variance(double variance, std::string variable_name) {
         ROS_ERROR("Sonar Position: Could not store variance... \n");
         return EXIT_FAILURE;
     } else if (temp == variance) {
-        ROS_INFO("sonar_position: Variance of %s is %f, stored on param server",variable_name.c_str(), variance);
+        ROS_INFO("sonar_position: Variance of %s is %f, stored on param server", variable_name.c_str(), variance);
         return EXIT_SUCCESS;
     } else{
         ROS_ERROR("Sonar Position: Could not store variance, did not match when checking");
