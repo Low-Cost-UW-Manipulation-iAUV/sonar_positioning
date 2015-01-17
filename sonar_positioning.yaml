@@ -3,13 +3,13 @@ sonar: #The config file for the sonar_positioning
     sonar0:
         listen_to: /sonarData0
         publish_commands_to: /sonarRequest0
-        publish_data_to: /sonar/position
+        publish_data_to: /sonar/position0
         parent_frame: SONAR_UWESUB_base
         child_frame: SONAR_UWESUB_beam
         calibration_length: 20        
         processing_params:
             track_wall:
-                beam_target:[2, 358]
+                beam_target: [2, 358]
                 offset_angle: 0
                 axis: x
             consecutive_bin_value_threshold: 100
@@ -23,7 +23,7 @@ sonar: #The config file for the sonar_positioning
         calibration_length: 20        
         processing_params:
             track_wall:
-                beam_target:[92, 88]
+                beam_target: [92, 88]
                 offset_angle: -90  # input in deg here, but will get converted into rad
                 axis: y
             consecutive_bin_value_threshold: 100

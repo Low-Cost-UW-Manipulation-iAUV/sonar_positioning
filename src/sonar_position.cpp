@@ -63,8 +63,7 @@ void sonar_position::do_subs_pubs(void) {
     temp_string.clear();
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/listen_to" ;
-
+    param_address << "/sonar/" << sonar_name_ << "/listen_to" ;
     if (!nh_.getParam(param_address.str(), temp_string)) {
 
         ROS_ERROR("Sonar Position: cant find raw data topic to listen to, exiting \n");
@@ -77,7 +76,7 @@ void sonar_position::do_subs_pubs(void) {
     temp_string.clear();
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/publish_data_to" ;
+    param_address << "/sonar/" << sonar_name_ << "/publish_data_to" ;
 
     if (!nh_.getParam(param_address.str(), temp_string)) {
 
@@ -91,7 +90,7 @@ void sonar_position::do_subs_pubs(void) {
     temp_string.clear();
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/publish_commands_to" ;
+    param_address << "/sonar/" << sonar_name_ << "/publish_commands_to" ;
 
     if (!nh_.getParam(param_address.str(), temp_string)) {
 
@@ -108,7 +107,7 @@ void sonar_position::get_sonar_calibration_data(void) {
 
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/calibration_length";
+    param_address << "/sonar/" << sonar_name_ << "/calibration_length";
     if (!nh_.getParam(param_address.str(), calibration_length)) {
 
         ROS_ERROR("Sonar Position: Could not find calibration_length, assuming 20. \n");
@@ -127,7 +126,7 @@ void sonar_position::get_sonar_calibration_data(void) {
     // check if the variance for x is available on the parameter server
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/variance/x";
+    param_address << "/sonar/" << sonar_name_ << "/variance/x";
     if (!nh_.getParam(param_address.str(), variance_x)) {
 
         ROS_ERROR("Sonar Position: Could not find variance of x, will determine it now.");
@@ -140,7 +139,7 @@ void sonar_position::get_sonar_calibration_data(void) {
     // check for y as well.
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/variance/y";
+    param_address << "/sonar/" << sonar_name_ << "/variance/y";
     if (!nh_.getParam(param_address.str(), variance_y)) {
 
         ROS_ERROR("Sonar Position: Could not find variance of y, will determine it now.");
@@ -157,7 +156,7 @@ void sonar_position::get_transform_parameters(void) {
     std::ostringstream param_address;
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/parent_frame";  
+    param_address << "/sonar/" << sonar_name_ << "/parent_frame";  
     if (!nh_.getParam(param_address.str(), parent_frame_id)) {
 
         ROS_ERROR("Sonar Position: couldn't find parent_frame_id, assuming sonar_base\n");
@@ -167,7 +166,7 @@ void sonar_position::get_transform_parameters(void) {
 
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/child_frame";  
+    param_address << "/sonar/" << sonar_name_ << "/child_frame";  
     if (!nh_.getParam(param_address.str(), child_frame_id)) {
 
         ROS_ERROR("Sonar Position: couldn't find child_frame_id, assuming sonar_beam\n");
@@ -180,7 +179,7 @@ void sonar_position::get_angular_offset(void) {
     std::ostringstream param_address;
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/processing_params/track_wall/offset_angle";  
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/offset_angle";  
     if (!nh_.getParam(param_address.str(), offset_angle)) {
 
         ROS_ERROR("Sonar Position: Could not find offset_angle, assuming 0\n");
@@ -199,7 +198,7 @@ void sonar_position::get_ENU_beam_targets(void) {
     std::ostringstream param_address;
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/processing_params/track_wall/beam_target";
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
     if (!nh_.getParamCached(param_address.str(), beam_target)) {
 
         ROS_ERROR("Sonar Position: Could not find beam_target assuming 0->4Deg\n");
@@ -215,7 +214,7 @@ void sonar_position::get_ENU_beam_targets(void) {
     axis = "";
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/processing_params/track_wall/axis";
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/axis";
     if (!nh_.getParamCached(param_address.str(), axis)) {
         ROS_ERROR("Sonar Position: Could not find axis, assuming x\n");
         axis = "x";
@@ -230,7 +229,7 @@ void sonar_position::get_processing_parameters(void) {
     std::ostringstream param_address;
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/processing_params/consecutive_bin_value_threshold";
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/consecutive_bin_value_threshold";
     if (!nh_.getParamCached(param_address.str(), consecutive_bin_value_threshold)) {
 
         ROS_ERROR("Sonar Position: Could not find consecutive_bin_value_threshold, assuming 100. \n");
@@ -240,7 +239,7 @@ void sonar_position::get_processing_parameters(void) {
 
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/processing_params/wall_threshold";
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/wall_threshold";
     if (!nh_.getParamCached(param_address.str(), wall_threshold)) {
 
         ROS_ERROR("Sonar Position: Could not find threshold, assuming 3. \n");
@@ -359,7 +358,7 @@ int sonar_position::store_variance(double variance, std::string variable_name) {
 
     param_address.clear();
     param_address.str("");
-    param_address << "/" << sonar_name_ << "/variance/variable_name";
+    param_address << "/sonar/" << sonar_name_ << "/variance/variable_name";
     nh_.setParam(param_address.str(), variance);
 
     double temp = 0;
