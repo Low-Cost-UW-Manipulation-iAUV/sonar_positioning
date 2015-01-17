@@ -14,82 +14,121 @@
                                     // Thus a full rotation is 6400 steps.
 
 #define DEGREESPERROTATION 360
-#define STD_ANGLE_PLUS 0.1745329252  //10°
-#define STD_ANGLE_MINUS 6.108652382  //350°
+#define STD_ANGLE_LEFT 4  
+#define STD_ANGLE_RIGHT 0  
 #define DEG2RAD (M_PI/180)
 namespace sonar {
 
-sonar_position::sonar_position(ros::NodeHandle nh) {
+sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     nh_ = nh;
-    sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this);
-    sub_sonar = nh_.subscribe<std_msgs::Int32MultiArray>("/sonarData", 1, &sonar_position::sub_callback_sonar, this);
+    sonar_name_ = sonar_name;
 
-    pub_position_x = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/sonar/position/x", 10);
-    pub_position_y = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/sonar/position/y", 10);
-    pub_sonar_command = nh_.advertise<std_msgs::String>("/sonarRequest", 5);
-    not_yet_configured = true;
+// Setup the publications and subscription
+    do_subs_pubs();
 
-    if (!nh_.getParam("/sonar/calibration_length", calibration_length)) {
+// Prepare the sonar calibration
+    get_sonar_calibration_data();
+
+// Get transform frame_ids from parameter server
+    get_transform_parameters();
+
+// Get the (initial) target headings for the sonar
+    get_ENU_beam_targets();
+
+// Get the angular offset for the transformation
+    get_angular_offset();
+
+
+// Prep variables    
+    yaw = 0;
+    pitch = 0;
+    roll = 0;
+    last_distance = 0;
+
+// Prep the processing parameters
+    get_processing_parameters();
+}
+
+sonar_position::~sonar_position() {
+
+}
+
+void sonar_position::do_subs_pubs(void) {
+    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/Odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
+
+    std::string temp_string;
+    std::ostringstream param_address;
+    
+    // Subscribe to the raw Sonar data
+    temp_string.clear();
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/listen_to" ;
+
+    if (!nh_.getParam(param_address.str(), temp_string)) {
+
+        ROS_ERROR("Sonar Position: cant find raw data topic to listen to, exiting \n");
+        ros::shutdown();
+    }
+    sub_sonar = nh_.subscribe<std_msgs::Int32MultiArray>(temp_string, 1, &sonar_position::sub_callback_sonar, this);
+
+
+    // Publish the finished data
+    temp_string.clear();
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/publish_data_to" ;
+
+    if (!nh_.getParam(param_address.str(), temp_string)) {
+
+        ROS_ERROR("Sonar Position: cant find which rostopic to publish to,error \n");
+        ros::shutdown();
+    }
+    pub_position = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>(temp_string, 10);
+
+
+    // Publish sonar commands here
+    temp_string.clear();
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/publish_commands_to" ;
+
+    if (!nh_.getParam(param_address.str(), temp_string)) {
+
+        ROS_ERROR("Sonar Position: cant find which rostopic to publish commands to,error \n");
+        ros::shutdown();
+    } 
+    pub_sonar_command = nh_.advertise<std_msgs::String>(param_address.str(), 5);   
+}
+
+
+
+void sonar_position::get_sonar_calibration_data(void) {
+    std::ostringstream param_address;
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/calibration_length";
+    if (!nh_.getParam(param_address.str(), calibration_length)) {
 
         ROS_ERROR("Sonar Position: Could not find calibration_length, assuming 20. \n");
         calibration_length = 20;
-        nh_.setParam("/sonar/calibration_length", calibration_length);
+        nh_.setParam(param_address.str(), calibration_length);
     }  
 
+    variance_x_found = false;
+    variance_y_found = false;
 
-    beam_width_x.clear();
-    beam_width_x.resize(2,0);
-
-    if (!nh_.getParamCached("/sonar/beam_width/x", beam_width_x)) {
-
-        ROS_ERROR("Sonar Position: Could not find beam_width_x, assuming +-10Deg either side of the x axis. \n");
-        
-        beam_width_x[0] = STD_ANGLE_PLUS ; // = +10deg = 3022.2 steps -  left side of the range we want to consider
-        beam_width_x[1] = STD_ANGLE_MINUS; // = 350° = 3377.7 steps -  right side of what we want to consider
-        nh_.setParam("/sonar/beam_width/x", beam_width_x);
-    } 
-    
-    beam_width_y.clear();
-    beam_width_y.resize(2,0);
-    if (!nh_.getParamCached("/sonar/beam_width/y", beam_width_y)) {
-
-        ROS_ERROR("Sonar Position: Could not find beam_width_y, assuming +-10Deg either side of the y axis. \n");
-        
-        beam_width_y[0] = (M_PI/2 + STD_ANGLE_PLUS); // = 100° = 1777.7 steps -  left side of the range we want to consider
-        beam_width_y[1] = (M_PI/2 - STD_ANGLE_PLUS); // = 80° = 1422.2 steps -  right side of what we want to consider
-        nh_.setParam("/sonar/beam_width/y", beam_width_y);
-    }     
     x_variance_data.clear();
     x_variance_data.reserve(calibration_length);
     y_variance_data.clear();
     y_variance_data.reserve(calibration_length);
 
-    if (!nh_.getParamCached("/sonar/consecutive_bin_value_threshold", consecutive_bin_value_threshold)) {
-
-        ROS_ERROR("Sonar Position: Could not find consecutive_bin_value_threshold, assuming 100. \n");
-        consecutive_bin_value_threshold = 100;
-        nh_.setParam("/sonar/consecutive_bin_value_threshold", consecutive_bin_value_threshold);
-    }
-
-
-    if (!nh_.getParamCached("/sonar/wall_threshold", wall_threshold)) {
-
-        ROS_ERROR("Sonar Position: Could not find threshold, assuming 3. \n");
-        wall_threshold = 3;
-        nh_.setParam("/sonar/wall_threshold", wall_threshold);
-    }
-
-    yaw = 0;
-    pitch = 0;
-    roll = 0;
-
-
-    last_distance = 0;
-    variance_x_found = false;
-    variance_y_found = false;
-
     // check if the variance for x is available on the parameter server
-    if (!nh_.getParam("/sonar/variance/x", variance_x)) {
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/variance/x";
+    if (!nh_.getParam(param_address.str(), variance_x)) {
 
         ROS_ERROR("Sonar Position: Could not find variance of x, will determine it now.");
         variance_x = 0;
@@ -99,7 +138,10 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
     }
 
     // check for y as well.
-    if (!nh_.getParam("/sonar/variance/y", variance_y)) {
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/variance/y";
+    if (!nh_.getParam(param_address.str(), variance_y)) {
 
         ROS_ERROR("Sonar Position: Could not find variance of y, will determine it now.");
         variance_y = 0;
@@ -107,35 +149,127 @@ sonar_position::sonar_position(ros::NodeHandle nh) {
     } else { // if it is available skip the determination
         variance_y_found = true;
     }
-
-
-
-
 }
 
-sonar_position::~sonar_position() {
-
-}
-
-/**configure_sonar():
+/** get_transform_parameters(): 
 */
-void sonar_position::configure_sonar(void) {
+void sonar_position::get_transform_parameters(void) {
+    std::ostringstream param_address;
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/parent_frame";  
+    if (!nh_.getParam(param_address.str(), parent_frame_id)) {
+
+        ROS_ERROR("Sonar Position: couldn't find parent_frame_id, assuming sonar_base\n");
+        parent_frame_id = "sonar_base";
+        nh_.setParam(param_address.str(), parent_frame_id);
+    }
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/child_frame";  
+    if (!nh_.getParam(param_address.str(), child_frame_id)) {
+
+        ROS_ERROR("Sonar Position: couldn't find child_frame_id, assuming sonar_beam\n");
+        parent_frame_id = "sonar_beam";
+        nh_.setParam(param_address.str(), child_frame_id);
+    }
+}
+
+void sonar_position::get_angular_offset(void) {
+    std::ostringstream param_address;
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/processing_params/track_wall/offset_angle";  
+    if (!nh_.getParam(param_address.str(), offset_angle)) {
+
+        ROS_ERROR("Sonar Position: Could not find offset_angle, assuming 0\n");
+        offset_angle = 0;
+        nh_.setParam(param_address.str(), offset_angle);
+    }    
+}
+
+
+/** get_ENU_beam_targets(): Get the initial heading (ENU) we want the sonar to look at.
+*/
+void sonar_position::get_ENU_beam_targets(void) {
+    beam_target.clear();
+    beam_target.resize(2,0);
+    
+    std::ostringstream param_address;
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/processing_params/track_wall/beam_target";
+    if (!nh_.getParamCached(param_address.str(), beam_target)) {
+
+        ROS_ERROR("Sonar Position: Could not find beam_target assuming 0->4Deg\n");
+        
+        beam_target[0] = STD_ANGLE_LEFT * M_PI/180; // 4°
+        beam_target[1] = STD_ANGLE_RIGHT * M_PI/180; // 0°
+        nh_.setParam(param_address.str(), beam_target);
+    } else {
+        beam_target[0] = beam_target[0] * M_PI / 180;
+        beam_target[1] = beam_target[1] * M_PI / 180;
+    }
+    
+    axis = "";
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/processing_params/track_wall/axis";
+    if (!nh_.getParamCached(param_address.str(), axis)) {
+        ROS_ERROR("Sonar Position: Could not find axis, assuming x\n");
+        axis = "x";
+        nh_.setParam(param_address.str(), axis);        
+    }
+
+}
+
+
+void sonar_position::get_processing_parameters(void) {
+
+    std::ostringstream param_address;
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/processing_params/consecutive_bin_value_threshold";
+    if (!nh_.getParamCached(param_address.str(), consecutive_bin_value_threshold)) {
+
+        ROS_ERROR("Sonar Position: Could not find consecutive_bin_value_threshold, assuming 100. \n");
+        consecutive_bin_value_threshold = 100;
+        nh_.setParam(param_address.str(), consecutive_bin_value_threshold);
+    }
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/processing_params/wall_threshold";
+    if (!nh_.getParamCached(param_address.str(), wall_threshold)) {
+
+        ROS_ERROR("Sonar Position: Could not find threshold, assuming 3. \n");
+        wall_threshold = 3;
+        nh_.setParam(param_address.str(), wall_threshold);
+    }
+}
+
+/** send_limits_sonar():
+*/
+void sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     // send the sonar the command to only sweep our required area.
     std_msgs::String sonar_command;    
 
     std::ostringstream temp;
-    temp << "leftlim="<< rad2steps(beam_width_y[0]) <<",rightlim="<< rad2steps(beam_width_x[1]) <<"";
+    temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) <<",rightlim="<< rad2steps( wrapRad(right_limit) )<<"";
     sonar_command.data = temp.str();
-    ROS_INFO("beam_width_y[0]: %f, beam_width_x[1]: %f", beam_width_y[0], beam_width_x[1]);
+    ROS_INFO("sonar_positioning - left_limit: %f, right_limit: %f", wrapRad(left_limit), wrapRad(right_limit) );
     ROS_INFO(sonar_command.data.c_str());
     pub_sonar_command.publish(sonar_command);  
 }
+
+
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
 */
-void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message) {
+void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& message) {
 
-    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
+    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
     tf::Matrix3x3 m(q);
     m.getRPY(roll, yaw, pitch);    
     imu_timestamp = message->header.stamp; 
@@ -145,80 +279,108 @@ void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message)
 /** sub_callback_sonar(): transforms the sonar data and publishes it as a position update for the sensor fusion.
 */
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
-    if(not_yet_configured == true) {
-        configure_sonar();
-        not_yet_configured = false;
-    }
+    // let the sonar track the wall.
+    track_wall();
 
-    double angle_rad = steps2rad(message->data[0]);
+    // THe sonar points now wherever we want it.
+    process_sonar(message);
 
-    // extract the imortant data from the sonar data
-    double d_hypot = sonar2Distance(message);
-    ROS_INFO("sonar_position - angle: %3f, d_hypot: %f",angle_rad/DEG2RAD, d_hypot);
-
-    nh_.getParamCached("/sonar/beam_width/x", beam_width_x);
-    nh_.getParamCached("/sonar/beam_width/y", beam_width_y);
-    // if we are looking ahead (along x). i.e.
-    //                  <= 10°             &&                >= 0°  OR                  <= 360°                       >=350°
-    if( d_hypot != 0 && ( (angle_rad <= beam_width_x[0] && angle_rad >= 0 ) ||  (angle_rad <= (2*M_PI) && angle_rad >= beam_width_x[1] ) ) ) {
-        double odom_dist = getOdomDistance(d_hypot, (yaw + angle_rad), pitch);
-        ROS_INFO("sonar_position - x - angle: %3f, d_hypot: %1.4f, odom_dist: %1.4f", angle_rad/DEG2RAD, d_hypot, odom_dist);
-        // if we know the variance of the sonar positioning data
-        if(variance_x_found == true) {
-            x_position = odom_dist;
-            x_angle = angle_rad;
-            publish_position_x();
-        } else { // we haven't got any variance data.
-            if(x_variance_data.size() < calibration_length) {
-                x_variance_data.push_back(odom_dist);
-                ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d", x_variance_data.size(), calibration_length);
-            // we've stored enough, lets calculate the variance
-            } else {
-                variance_x = pow( std2(x_variance_data, mean(x_variance_data) ), 2);
-                ROS_INFO("sonar_position: Variance of x is %f, stored on param server", variance_x);
-                nh_.setParam("/sonar/variance/x", variance_x);
-
-                variance_x_found = true;
-            }
-
-        } // We are looking at the y axis. i.e.
-    //                        <= 100°            &&                >= 80°
-    } else if (d_hypot != 0 && (angle_rad <= beam_width_y[0] && angle_rad >= beam_width_y[1] ) ) {
-        // find the adjascent (distance along y in 'odom' frame) if the d_hypot is the hypothenuse.
-            // We first look top down: undo the yaw and sonar angle. Here we have to take into consideration that we are offset by +90deg.... And then look at it from the side to counteract the current roll.
-        double odom_dist = getOdomDistance(d_hypot, (M_PI/2 -(yaw + angle_rad)), roll);
-        ROS_INFO("sonar_position - y - angle: %3f, d_hypot: %1.4f, odom_dist: %1.4f", angle_rad/DEG2RAD, d_hypot, odom_dist);
-
-
-        // if we know the variance of the sonar positioning data
-        if(variance_y_found == true) {
-            // is the x axis measurement done? 
-                y_position = odom_dist;
-                y_angle = angle_rad;
-
-                // publish it              
-                publish_position_y();
-        } else { // we haven't got any variance data.
-            if(y_variance_data.size() < calibration_length) {
-                y_variance_data.push_back(odom_dist);
-                ROS_INFO("sonar_position: Determining Sonar variance on y - Sample %lu of %d",y_variance_data.size(), calibration_length);                
-            // we've stored enough, lets calculate the variance
-            } else {
-                variance_y = pow( std2(y_variance_data, mean(y_variance_data) ), 2);
-                ROS_INFO("sonar_position: Variance of y is %f, stored on param server", variance_y);
-                nh_.setParam("/sonar/variance/y", variance_y);
-
-                variance_y_found = true;
-            }
-        }
+    if ( (axis == "x" && x_variance_found) || (axis == "y" && y_variance_found) ){
+        publish_position(axis);
     }
 }
+
+
+/** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
+        Maybe we need to limit the number of updates we send here... 
+*/
+void sonar_position::track_wall(void) {
+    
+    // Update the beam target
+    get_ENU_beam_targets();
+    double left = beam_target[0] - yaw;
+    double right = beam_target[1] - yaw;
+    send_limits_sonar(left, right);
+}
+
+
+
+/** process_sonar(): Does the actual sonar processing
+*/
+int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
+    double angle_rad = steps2rad(message->data[0]);
+
+    // Find the wall in the 
+    double d_hypot = sonar2Distance(message);
+    ROS_INFO("sonar_position - angle: %3f, d_hypot: %f",angle_rad/DEG2RAD, d_hypot);
+    // If we are working for the x axis
+    if(axis == "x") {
+
+        if(x_variance_found == true) {
+            position = d_hypot;
+            angle = angle_rad;
+            return EXIT_SUCCESS;
+        } else { // we haven't got any variance data.
+
+            if(x_variance_data.size() >= calibration_length) {
+                variance_x = pow( std2(x_variance_data, mean(x_variance_data) ), 2);
+                if(store_variance(variance_x, axis) == EXIT_SUCCESS) {
+                    variance_x_found = true;
+                }
+                return EXIT_SUCCESS;
+            }
+            x_variance_data.push_back(d_hypot);
+            ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d", x_variance_data.size(), calibration_length);
+        }
+
+    } else if(axis == "y") {
+       if(y_variance_found == true) {
+            position = d_hypot;
+            angle = angle_rad;
+            return EXIT_SUCCESS;
+        } else { // we haven't got any variance data.
+
+            if(y_variance_data.size() >= calibration_length) {
+                variance_y = pow( std2(y_variance_data, mean(y_variance_data) ), 2);
+                if(store_variance(variance_y, axis) == EXIT_SUCCESS) {
+                    variance_y_found = true;
+                }
+                return EXIT_SUCCESS;
+            }
+            y_variance_data.push_back(d_hypot);
+            ROS_INFO("sonar_position: Determining Sonar variance on y - Sample %lu of %d", y_variance_data.size(), calibration_length);
+        }
+
+    }
+}
+
+int sonar_position::store_variance(double variance, std::string variable_name) {
+    std::ostringstream param_address;
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/" << sonar_name_ << "/variance/variable_name";
+    nh_.setParam(param_address.str(), variance);
+
+    double temp = 0;
+    if (!nh_.getParam(param_address.str(), temp)) {
+        ROS_ERROR("Sonar Position: Could not store variance... \n");
+        return EXIT_FAILURE;
+    } else if (temp == variance) {
+        ROS_INFO("sonar_position: Variance of %s is %f, stored on param server",variable_name.c_str(), variance);
+        return EXIT_SUCCESS;
+    } else{
+        ROS_ERROR("Sonar Position: Could not store variance, did not match when checking");
+        return EXIT_FAILURE;
+    }
+}
+
 
 /** sonar2Distance(): Find the strongest signal in the sonar array.
 */
 double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr& message) {
-    nh_.getParamCached("/sonar/consecutive_bin_value_threshold", consecutive_bin_value_threshold);
-    nh_.getParamCached("/sonar/wall_threshold", wall_threshold);
+    get_processing_parameters();
+
     // Find the number of data bins
     int numBins = message->data[1];
     // the maximum distance to be found in dM
@@ -277,44 +439,32 @@ double sonar_position::getOdomDistance(float body_position, double angle_a, doub
     double undo_pitch = fabs(cos(angle_a)) * body_position ;
     double odom_position = fabs(cos(angle_b)) * undo_pitch;
 
-
     return odom_position;
-
 }
 
 /** publish_position(): DOes what is says
 */
-void sonar_position::publish_position_x(void) {
+void sonar_position::publish_position(std::string axis) {
 
-    
-    publish_sonar_beam_transform(x_angle, "SONAR_UWESUB_beam", "SONAR_UWESUB_base");
-
-    geometry_msgs::PoseWithCovarianceStamped sonar_position;
-    sonar_position.header.stamp = ros::Time::now(); 
-    sonar_position.header.frame_id = "SONAR_UWESUB_base";
-    sonar_position.pose.pose.position.x = x_position;
-    sonar_position.pose.covariance.fill(0.0);
-    // set the variance data for x
-    sonar_position.pose.covariance[0] = variance_x;
-
-    pub_position_x.publish(sonar_position);
-}
-/** publish_position(): DOes what is says
-*/
-void sonar_position::publish_position_y(void) {
-
-    publish_sonar_beam_transform(y_angle - M_PI/2, "SONAR_UWESUB_beam", "SONAR_UWESUB_base");    
+    publish_sonar_beam_transform(angle + offset_angle, parent_frame_id, child_frame_id);
 
     geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
-    sonar_position.header.frame_id = "SONAR_UWESUB";
-    sonar_position.pose.pose.position.y = y_position;
+    sonar_position.header.frame_id = parent_frame_id;
     sonar_position.pose.covariance.fill(0.0);
-    // set the variance data for y
-    sonar_position.pose.covariance[1] = variance_y;
 
-    pub_position_y.publish(sonar_position);
+    if(axis == "x") {
+        sonar_position.pose.pose.position.x = position;
+        // set the variance data for x
+        sonar_position.pose.covariance[0] = variance_x;
+    } else if(axis == "y") {
+        sonar_position.pose.pose.position.y = position;
+        // set the variance data for y
+        sonar_position.pose.covariance[1] = variance_y;
+    }
 
+
+    pub_position.publish(sonar_position);
 }
 
 /** publish_sonar_beam_transform: rotates the sonar_beam frame to the sonar_base frame
@@ -389,17 +539,37 @@ int sonar_position::deg2steps(double deg) {
     }
 }
 
+double sonar_position::wrapRad(double angle) {
+    angle = fmod(angle,2*M_PI);
+    if (angle > M_PI) return -2*M_PI + angle;
+    if (angle <= -M_PI) return 2*M_PI + angle;
+    return angle;
+}
+  /**
+  * The function wraps any value into the [-180,180> range.
+  *
+  * \param angle The arbitrary value.
+  * \return The wrapped value in the [-pi,pi> interval.
+  */
+double sonar_position::wrapDeg(double angle) {
+    angle = fmod(angle,360.);
+    if (angle > 180) return -360. + angle;
+    if (angle <= -180) return 360. + angle;
+    return angle;
+}
+
 }  //end of namespace
 
 int main(int argc, char **argv) {
     ros::init(argc, argv, "sonar_positioning");
     ros::NodeHandle nh;
     /// An Async spinner creates another thread which will handle the event of this node being executed.
-
-    ros::AsyncSpinner spinner(1);
+ 
+    ros::AsyncSpinner spinner(4);
     spinner.start();
     // create the instance of the class
-    sonar::sonar_position orange_box(nh);
+    sonar::sonar_position orange_box_0(nh, "sonar0");
+    sonar::sonar_position orange_box_1(nh, "sonar1");
 
     // register the 
     ros::spin();

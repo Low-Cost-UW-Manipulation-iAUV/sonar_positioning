@@ -1,9 +1,4 @@
 <launch>
     <rosparam command="load" file="$(find sonar_positioning)/sonar_positioning.yaml" />
     <node name="sonar_positioning" pkg="sonar_positioning" type="sonar_position" respawn="true" output="screen" />
-    <rosparam>
-        /sonar/calibration_length: 20
-        /sonar/beam_width/x: [0.1745329252, 6.108652382]
-        /sonar/beam_width/y: [1.745329252, 1.3962634016]
-    </rosparam>
 </launch>
