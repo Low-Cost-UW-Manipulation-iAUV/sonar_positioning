@@ -44,6 +44,7 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     pitch = 0;
     roll = 0;
     last_distance = 0;
+    sonar_configured = false;
 
 // Prep the processing parameters
     get_processing_parameters();
@@ -54,7 +55,8 @@ sonar_position::~sonar_position() {
 }
 
 void sonar_position::do_subs_pubs(void) {
-    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
+    sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
+   // sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
 
     std::string temp_string;
     std::ostringstream param_address;
@@ -289,7 +291,7 @@ void sonar_position::get_processing_parameters(void) {
 
 /** send_limits_sonar():
 */
-void sonar_position::send_limits_sonar(double left_limit, double right_limit) {
+int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     // send the sonar the command to only sweep our required area.
     std_msgs::String sonar_command;    
 
@@ -298,22 +300,28 @@ void sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     sonar_command.data = temp.str();
     ROS_INFO("sonar_positioning - left_limit: %f, right_limit: %f", wrapRad(left_limit), wrapRad(right_limit) );
     ROS_INFO(sonar_command.data.c_str());
-    pub_sonar_command.publish(sonar_command);  
+    pub_sonar_command.publish(sonar_command);
+    return EXIT_SUCCESS;
 }
 
 
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
 */
-void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& message) {
+void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message ) {//const nav_msgs::Odometry::ConstPtr& message) {
 
-    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
+//    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
+    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
+
     tf::Matrix3x3 m(q);
-    m.getRPY(roll, yaw, pitch);    
+
+    m.getRPY(roll, pitch, yaw);
+
     imu_timestamp = message->header.stamp;
 
     // Publish the odom->SVS transform as good brothers do.
-    publish_sonar_beam_transform(svs_transform_x, svs_transform_y, svs_transform_z,  yaw,pitch,roll, parent_frame_id,svs_child_frame_id);
+
+    publish_transform(svs_transform_x, svs_transform_y, svs_transform_z,  yaw,pitch,roll, parent_frame_id,svs_child_frame_id);
 }
 
 
@@ -321,7 +329,12 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 */
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
     // let the sonar track the wall.
-    track_wall();
+    while (sonar_configured == false) {
+        if(track_wall(0.0, 0.0) == EXIT_SUCCESS) {
+            sonar_configured = true;
+        }
+
+    }
 
     // THe sonar points now wherever we want it.
     process_sonar(message);
@@ -329,7 +342,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     if ( (axis == "x" && variance_x_found) || (axis == "y" && variance_y_found) ){
         
         // Dynamic transform publish which allows for 
-        publish_sonar_beam_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);    
+        publish_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);    
         publish_position(axis);
     }
 }
@@ -338,13 +351,17 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 /** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
         Maybe we need to limit the number of updates we send here... 
 */
-void sonar_position::track_wall(void) {
+int sonar_position::track_wall(double left_subtrahend, double right_subtrahend) {
     
     // Update the beam target
     get_ENU_beam_targets();
-    double left = beam_target[0] - yaw;
-    double right = beam_target[1] - yaw;
-    send_limits_sonar(left, right);
+    double left = beam_target[0] - left_subtrahend;
+    double right = beam_target[1] - right_subtrahend;
+    if (send_limits_sonar(left, right) == EXIT_SUCCESS) {
+        return EXIT_SUCCESS;
+    } else {
+        return EXIT_FAILURE;
+    }
 }
 
 
@@ -509,10 +526,10 @@ void sonar_position::publish_position(std::string axis) {
     pub_position.publish(sonar_position);
 }
 
-/** publish_sonar_beam_transform: rotates the sonar_beam frame to the sonar_base frame
+/** publish_transform: rotates the sonar_beam frame to the sonar_base frame
         publishes the transformation that will rotate the x,y position in the local sonar frame to the sonar base frame.
 */
-void sonar_position::publish_sonar_beam_transform(double x, double y, double z, double yaw, double pitch, double roll, std::string parent_frame_id, std::string child_frame_id) {
+void sonar_position::publish_transform(double x, double y, double z, double yaw, double pitch, double roll, std::string parent_frame_id, std::string child_frame_id) {
     tf::Transform transform;
     transform.setOrigin(tf::Vector3(x, y, z));
     tf::Quaternion q;

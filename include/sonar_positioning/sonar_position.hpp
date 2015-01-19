@@ -16,14 +16,14 @@ public:
     void do_subs_pubs(void);
 
 private:
-    void sub_callback_imu(const nav_msgs::Odometry::ConstPtr&);
+    void sub_callback_imu(const sensor_msgs::Imu::ConstPtr&);//const nav_msgs::Odometry::ConstPtr&);
     void sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& );
 
     double sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&);
     double getOdomDistance(float, double, double);
     void publish_position(std::string);
-    void send_limits_sonar(double, double);
-    void publish_sonar_beam_transform(double,double,double,  double,double,double,  std::string,std::string);
+    int send_limits_sonar(double, double);
+    void publish_transform(double,double,double,  double,double,double,  std::string,std::string);
     double wrapRad(double);
     double wrapDeg(double);
 
@@ -40,6 +40,7 @@ private:
     double offset_angle;
     bool variance_x_found, variance_y_found;
     ros::Time imu_timestamp;
+    bool sonar_configured;
 
     int calibration_length;
     int consecutive_bin_value_threshold;
@@ -74,7 +75,7 @@ private:
     void get_angular_offset(void);
     void get_processing_parameters(void);
     int store_variance(double , std::string);
-    void track_wall(void);
+    int track_wall(double, double);
 
     double mean(const std::vector<double>);
     double std2(const std::vector<double>, const double mean);    
