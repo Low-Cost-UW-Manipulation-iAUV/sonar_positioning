@@ -23,7 +23,7 @@ private:
     double getOdomDistance(float, double, double);
     void publish_position(std::string);
     void send_limits_sonar(double, double);
-    void publish_sonar_beam_transform(double,std::string,std::string);
+    void publish_sonar_beam_transform(double,double,double,  double,double,double,  std::string,std::string);
     double wrapRad(double);
     double wrapDeg(double);
 
@@ -52,10 +52,17 @@ private:
     std::string axis;
 
 
-    // transform broadcaster that will publish the 'virtual' beam heading of the sonars
+    // transform broadcaster that will publish the transform odom->sonar and odom->svs
     tf::TransformBroadcaster transformer;
     std::string child_frame_id;
+    std::string svs_child_frame_id;    
     std::string parent_frame_id;
+    double transform_x;
+    double transform_y;
+    double transform_z;
+    double svs_transform_x;
+    double svs_transform_y;
+    double svs_transform_z;
 
     double steps2rad(int );
     int rad2steps(double );
@@ -68,7 +75,6 @@ private:
     void get_processing_parameters(void);
     int store_variance(double , std::string);
     void track_wall(void);
-
 
     double mean(const std::vector<double>);
     double std2(const std::vector<double>, const double mean);    

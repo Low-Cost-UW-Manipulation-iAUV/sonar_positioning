@@ -54,7 +54,7 @@ sonar_position::~sonar_position() {
 }
 
 void sonar_position::do_subs_pubs(void) {
-    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/Odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
+    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
 
     std::string temp_string;
     std::ostringstream param_address;
@@ -159,8 +159,8 @@ void sonar_position::get_transform_parameters(void) {
     param_address << "/sonar/" << sonar_name_ << "/parent_frame";  
     if (!nh_.getParam(param_address.str(), parent_frame_id)) {
 
-        ROS_ERROR("Sonar Position: couldn't find parent_frame_id, assuming sonar_base\n");
-        parent_frame_id = "sonar_base";
+        ROS_ERROR("Sonar Position: couldn't find parent_frame_id, assuming odom\n");
+        parent_frame_id = "odom";
         nh_.setParam(param_address.str(), parent_frame_id);
     }
 
@@ -169,9 +169,48 @@ void sonar_position::get_transform_parameters(void) {
     param_address << "/sonar/" << sonar_name_ << "/child_frame";  
     if (!nh_.getParam(param_address.str(), child_frame_id)) {
 
-        ROS_ERROR("Sonar Position: couldn't find child_frame_id, assuming sonar_beam\n");
-        parent_frame_id = "sonar_beam";
+        ROS_ERROR("Sonar Position: couldn't find child_frame_id, assuming sonar_undefined\n");
+        child_frame_id = "sonar_undefined";
         nh_.setParam(param_address.str(), child_frame_id);
+    }
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/position_base_link_frame";
+    std::vector<double> temp;
+    
+    temp.clear();    
+    if (!nh_.getParam(param_address.str(), temp)) {
+
+        ROS_ERROR("Sonar Position: couldn't find position_base_link_frame, assuming 0\n");
+        temp[0] = 0.0;
+        temp[1] = 0.0;
+        temp[2] = 0.0;
+        nh_.setParam(param_address.str(), temp);
+    }
+    transform_x = temp[0];
+    transform_y = temp[1];
+    transform_z = temp[2];
+
+
+    temp.clear();
+    if (!nh_.getParam("/sonar/svs/position_base_link_frame", temp)) {
+
+        ROS_ERROR("Sonar Position: couldn't find SVS position_base_link_frame, assuming 0\n");
+        temp[0] = 0.0;
+        temp[1] = 0.0;
+        temp[2] = 0.0;
+        nh_.setParam(param_address.str(), temp);
+    }
+    svs_transform_x = temp[0];
+    svs_transform_y = temp[1];
+    svs_transform_z = temp[2];   
+
+    if (!nh_.getParam("/sonar/svs/child_frame_id", svs_child_frame_id)) {
+
+        ROS_ERROR("Sonar Position: couldn't find SVS child_frame_id_id, assuming SVS\n");
+        svs_child_frame_id = "SVS";
+        nh_.setParam(param_address.str(), svs_child_frame_id);
     }
 }
 
@@ -271,7 +310,10 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
     tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
     tf::Matrix3x3 m(q);
     m.getRPY(roll, yaw, pitch);    
-    imu_timestamp = message->header.stamp; 
+    imu_timestamp = message->header.stamp;
+
+    // Publish the odom->SVS transform as good brothers do.
+    publish_sonar_beam_transform(svs_transform_x, svs_transform_y, svs_transform_z,  yaw,pitch,roll, parent_frame_id,svs_child_frame_id);
 }
 
 
@@ -285,6 +327,9 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     process_sonar(message);
 
     if ( (axis == "x" && variance_x_found) || (axis == "y" && variance_y_found) ){
+        
+        // Dynamic transform publish which allows for 
+        publish_sonar_beam_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);    
         publish_position(axis);
     }
 }
@@ -445,11 +490,9 @@ double sonar_position::getOdomDistance(float body_position, double angle_a, doub
 */
 void sonar_position::publish_position(std::string axis) {
 
-    publish_sonar_beam_transform(angle + offset_angle, parent_frame_id, child_frame_id);
-
     geometry_msgs::PoseWithCovarianceStamped sonar_position;
     sonar_position.header.stamp = ros::Time::now(); 
-    sonar_position.header.frame_id = parent_frame_id;
+    sonar_position.header.frame_id = child_frame_id;
     sonar_position.pose.covariance.fill(0.0);
 
     if(axis == "x") {
@@ -469,11 +512,11 @@ void sonar_position::publish_position(std::string axis) {
 /** publish_sonar_beam_transform: rotates the sonar_beam frame to the sonar_base frame
         publishes the transformation that will rotate the x,y position in the local sonar frame to the sonar base frame.
 */
-void sonar_position::publish_sonar_beam_transform(double sonar_yaw_rad, std::string parent_frame_id, std::string child_frame_id) {
+void sonar_position::publish_sonar_beam_transform(double x, double y, double z, double yaw, double pitch, double roll, std::string parent_frame_id, std::string child_frame_id) {
     tf::Transform transform;
-    transform.setOrigin(tf::Vector3(0.0, 0.0, 0.0));
+    transform.setOrigin(tf::Vector3(x, y, z));
     tf::Quaternion q;
-    q.setRPY(0, 0, sonar_yaw_rad);
+    q.setRPY(roll, pitch, yaw);
     transform.setRotation(q);
     transformer.sendTransform(tf::StampedTransform(transform, ros::Time::now(), parent_frame_id, child_frame_id) );
 }
