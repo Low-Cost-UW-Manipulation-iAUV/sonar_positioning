@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
 	message_generation
 	)
 
+find_package(Boost REQUIRED COMPONENTS system)
 
 
 ## Declare a catkin package
@@ -28,7 +29,7 @@ catkin_package(
 	 )
 
 ## Build talker and listener
-include_directories(include ${catkin_INCLUDE_DIRS})
+include_directories(include ${catkin_INCLUDE_DIRS} SYSTEM ${Boost_INCLUDE_DIR})
 
 add_executable(sonar_position src/sonar_position.cpp)
 target_link_libraries(sonar_position ${catkin_LIBRARIES})

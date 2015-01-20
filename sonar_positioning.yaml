@@ -10,11 +10,14 @@ sonar: #The config file for the sonar_positioning
         calibration_length: 20
         processing_params:
             track_wall:
-                beam_target: [2, 358]
+                beam_target: [2.05, 358]
                 offset_angle: 0
                 axis: x
+            skip_bins: 0  # 0.7 in real life
             consecutive_bin_value_threshold: 100
-            wall_threshold: 3      
+            wall_threshold: 3
+            mountain_minimum: 70
+            valley_limit: 10
     sonar1:
         listen_to: /sonarData1
         publish_commands_to: /sonarRequest1
@@ -28,8 +31,11 @@ sonar: #The config file for the sonar_positioning
                 beam_target: [100, 80]
                 offset_angle: -90  # input in deg here, but will get converted into rad
                 axis: y
+            skip_bins: 0  # 0.7 in real life
             consecutive_bin_value_threshold: 100
             wall_threshold: 3
+            mountain_minimum: 70
+            valley_limit: 10
     svs:
         position_base_link_frame: [0.0, 0.0, 0.0]
         child_frame_id: SVS

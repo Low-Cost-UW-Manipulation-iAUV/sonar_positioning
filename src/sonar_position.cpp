@@ -45,6 +45,7 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     roll = 0;
     last_distance = 0;
     sonar_configured = false;
+    bvm_data_setup = false;
 
 // Prep the processing parameters
     get_processing_parameters();
@@ -237,21 +238,6 @@ void sonar_position::get_ENU_beam_targets(void) {
     beam_target.resize(2,0);
     
     std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
-    if (!nh_.getParamCached(param_address.str(), beam_target)) {
-
-        ROS_ERROR("Sonar Position: Could not find beam_target assuming 0->4Deg\n");
-        
-        beam_target[0] = STD_ANGLE_LEFT * M_PI/180; // 4°
-        beam_target[1] = STD_ANGLE_RIGHT * M_PI/180; // 0°
-        nh_.setParam(param_address.str(), beam_target);
-    } else {
-        beam_target[0] = beam_target[0] * M_PI / 180;
-        beam_target[1] = beam_target[1] * M_PI / 180;
-    }
-    
     axis = "";
     param_address.clear();
     param_address.str("");
@@ -261,6 +247,22 @@ void sonar_position::get_ENU_beam_targets(void) {
         axis = "x";
         nh_.setParam(param_address.str(), axis);        
     }
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
+    if (!nh_.getParamCached(param_address.str(), beam_target)) {
+
+        ROS_ERROR("Sonar Position: Could not find beam_target assuming 0->4Deg\n");
+        
+        beam_target[0] = STD_ANGLE_LEFT ; // 4°
+        beam_target[1] = STD_ANGLE_RIGHT ; // 0°
+        nh_.setParam(param_address.str(), beam_target);
+    } 
+    // we want the local beam target in rad
+    beam_target[0] = beam_target[0] * M_PI / 180;
+    beam_target[1] = beam_target[1] * M_PI / 180;
+    ROS_ERROR("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
 
 }
 
@@ -287,6 +289,36 @@ void sonar_position::get_processing_parameters(void) {
         wall_threshold = 3;
         nh_.setParam(param_address.str(), wall_threshold);
     }
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/valley_limit";
+    if (!nh_.getParamCached(param_address.str(), valley_limit)) {
+
+        ROS_ERROR("Sonar Position: Could not find valley_limit, assuming 10. \n");
+        valley_limit = 10;
+        nh_.setParam(param_address.str(), valley_limit);
+    }
+
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/mountain_minimum";
+    if (!nh_.getParamCached(param_address.str(), mountain_minimum)) {
+
+        ROS_ERROR("Sonar Position: Could not find threshold, assuming 70. \n");
+        mountain_minimum = 70;
+        nh_.setParam(param_address.str(), mountain_minimum);
+    }
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/skip_bins";
+    if (!nh_.getParamCached(param_address.str(), skip_bins)) {
+
+        ROS_ERROR("Sonar Position: Could not find skip_bins, assuming 0. \n");
+        skip_bins = 0.0;
+        nh_.setParam(param_address.str(), skip_bins);
+    }
+
 }
 
 /** send_limits_sonar():
@@ -299,7 +331,7 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) <<",rightlim="<< rad2steps( wrapRad(right_limit) )<<"";
     sonar_command.data = temp.str();
     ROS_INFO("sonar_positioning - left_limit: %f, right_limit: %f", wrapRad(left_limit), wrapRad(right_limit) );
-    ROS_INFO(sonar_command.data.c_str());
+    ROS_INFO("%s",sonar_command.data.c_str());
     pub_sonar_command.publish(sonar_command);
     return EXIT_SUCCESS;
 }
@@ -322,6 +354,8 @@ void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message 
     // Publish the odom->SVS transform as good brothers do.
 
     publish_transform(svs_transform_x, svs_transform_y, svs_transform_z,  yaw,pitch,roll, parent_frame_id,svs_child_frame_id);
+    publish_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);
+
 }
 
 
@@ -337,13 +371,13 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     }
 
     // THe sonar points now wherever we want it.
-    process_sonar(message);
+    if (process_sonar(message) == EXIT_SUCCESS) {
 
-    if ( (axis == "x" && variance_x_found) || (axis == "y" && variance_y_found) ){
-        
-        // Dynamic transform publish which allows for 
-        publish_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);    
-        publish_position(axis);
+        if ( (axis == "x" && variance_x_found) || (axis == "y" && variance_y_found) ){
+            
+            // Dynamic transform publish which allows for 
+            publish_position(axis);
+        }
     }
 }
 
@@ -371,10 +405,29 @@ int sonar_position::track_wall(double left_subtrahend, double right_subtrahend) 
 int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
     double angle_rad = steps2rad(message->data[0]);
 
-    // Find the wall in the 
-    double d_hypot = sonar2Distance(message);
-    ROS_INFO("sonar_position - angle: %3f, d_hypot: %f",angle_rad/DEG2RAD, d_hypot);
-    // If we are working for the x axis
+    // if our beam_target is not crossing 0
+    if(beam_target[0] >= beam_target[1]) {
+        if(angle_rad >= beam_target[1] && angle_rad <= beam_target[0]) {// we are withing the beam targets which do not wrap
+        } else {
+            ROS_ERROR("sonar_position - %s - sonar scans at %f outside of demanded area (continous area)", axis.c_str(), angle_rad*180/M_PI);
+            return EXIT_FAILURE;
+        }
+    } else {
+        if((angle_rad >= beam_target[1] && angle_rad <= 2*M_PI) || (angle_rad <= beam_target[0] && angle_rad >= 0) ) { //as above but crossing 360/0 discontinuity
+        } else {
+            ROS_ERROR("sonar_position - %s - sonar scans at %f outside of demanded area (discontinous area)", axis.c_str(), angle_rad*180/M_PI);
+            return EXIT_FAILURE;
+        }
+    }
+
+    // Find the wall in the noisy data
+    double d_hypot = 0;
+    if( sonar2Distance(message, &d_hypot) == EXIT_FAILURE) {
+        return EXIT_FAILURE;
+    }
+
+    ROS_INFO("sonar_position - %s - angle: %3f, d_hypot: %f", axis.c_str() , angle_rad/DEG2RAD, d_hypot);
+
     if(axis == "x") {
 
         if(variance_x_found == true) {
@@ -439,7 +492,7 @@ int sonar_position::store_variance(double variance, std::string variable_name) {
 
 /** sonar2Distance(): Find the strongest signal in the sonar array.
 */
-double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr& message) {
+double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr& message, double *d_hypot) {
     get_processing_parameters();
 
     // Find the number of data bins
@@ -452,7 +505,7 @@ double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&
         double strongest_bin = 0;
         // find the strongest reflection
         int counter_peaks = 0;
-        for (int x=3; x < (numBins+3); x++) {
+        for (int x=3+skip_bins; x < (numBins+3); x++) {
 
             // count consecutive values higher than the threshold
             if (message->data[x] >= consecutive_bin_value_threshold) {
@@ -476,20 +529,62 @@ double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&
         if(isnan(strongest_bin) == false) {
                     // turn range back into meters from dM and return the strongest reflection distance
             last_distance = strongest_bin * (range / (double) numBins);
-            return last_distance;
+            *d_hypot = last_distance;
+            return EXIT_SUCCESS;
         } else {
             ROS_ERROR("Strongest_bin was broken. - returning last_distance");
 
-            return last_distance;
+            return EXIT_FAILURE;
         }
         
     } else {
         ROS_ERROR("Message did not contain proper info. - returning last_distance");
         //ROS_ERROR("debug info: data.size(): %lu, numBins: %d, range: %f", message->data.size(), numBins, range );
-        return last_distance;
+        return EXIT_FAILURE;
     }
 }
 
+int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr& message) {
+    get_processing_parameters();
+
+    int numBins = message->data[1];
+    // the maximum distance to be found in dM
+    double range = message->data[2]/10;
+    // ensure we are staying within the message and that neither of these numbers are NaN
+    if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins != 0) ) {
+        
+        if(bvm_data_setup == false) {
+            bvm_data.clear();
+            bvm_data.resize(3);
+            bvm_data_setup = true;
+        }
+
+        // store the data in the circular buffer
+        std::vector<double> temp;
+        std::vector<double> blurred;
+        temp.assign(message->data.begin()+3, message->data.end());
+        bvm_data.push_back(temp);
+
+        // Convolution with a kernel = ones(3), kernel(2,2) = 0;
+        blurred[0] = bvm_data[1][0];
+        for (int x = 1; x < numBins-1; x++) {
+
+            blurred[x] = (bvm_data[0][x] + bvm_data[2][x] + bvm_data[0][x-1] + bvm_data[1][x-1] + bvm_data[2][x-1] + bvm_data[0][x+1] + bvm_data[1][x+1] + bvm_data[2][x+2])/8;
+        }
+
+        for (std::vector<double>::iterator itx = blurred.begin(); itx < blurred.end()-20; ++itx) {
+            // is the valley low enough (and is it after the crappy sensor area)
+            if ( mean(blurred, blurred.begin()+skip_bins, blurred.begin()+9) <= valley_limit) {
+                // is the mountain high enough find the peak
+                if (mean(blurred, blurred.begin()+skip_bins+10, blurred.begin()+skip_bins+skip_bins+20) >= mountain_minimum) {
+                    std::vector<double>::iterator it = std::max_element(blurred.begin()+10+skip_bins, blurred.begin()+skip_bins+20);
+                    // and return the peaks position
+                    return (it - blurred.begin());
+                } 
+            }
+        }
+    }
+}
 
 /** getOdomDistance(): find the distance to the assumed vertical wall 
             in the odom frame given the distance to the same wall in body frame.
@@ -545,6 +640,20 @@ double sonar_position::mean(const std::vector<double> vec) {
     double sum = 0;
     unsigned int size = 0;
     for (typename std::vector<double>::const_iterator it = vec.begin(); it!=vec.end(); ++it, ++size) 
+    { 
+        sum += (*it);
+        // if size is not == 0, divide by size, else return 0
+    }
+
+    return (size)?(sum/(double) size):0;
+}
+
+/** mean(): calculates the mean
+*/
+double sonar_position::mean(const std::vector<double> vec, typename std::vector<double>::const_iterator start, typename std::vector<double>::const_iterator finish) {
+    double sum = 0;
+    unsigned int size = 0;
+    for (typename std::vector<double>::const_iterator it = start; it!=finish; ++it, ++size) 
     { 
         sum += (*it);
         // if size is not == 0, divide by size, else return 0
