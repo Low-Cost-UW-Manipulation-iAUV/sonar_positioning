@@ -132,7 +132,7 @@ void sonar_position::get_sonar_calibration_data(void) {
     param_address << "/sonar/" << sonar_name_ << "/variance/x";
     if (!nh_.getParam(param_address.str(), variance_x)) {
 
-        ROS_ERROR("Sonar Position: Could not find variance of x, will determine it now.");
+        ROS_INFO("Sonar Position: Could not find variance of x, will determine it now.");
         variance_x = 0;
         variance_x_found = false;
     } else { // if it is available skip the determination
@@ -145,7 +145,7 @@ void sonar_position::get_sonar_calibration_data(void) {
     param_address << "/sonar/" << sonar_name_ << "/variance/y";
     if (!nh_.getParam(param_address.str(), variance_y)) {
 
-        ROS_ERROR("Sonar Position: Could not find variance of y, will determine it now.");
+        ROS_INFO("Sonar Position: Could not find variance of y, will determine it now.");
         variance_y = 0;
         variance_y_found = false;
     } else { // if it is available skip the determination
@@ -262,7 +262,7 @@ void sonar_position::get_ENU_beam_targets(void) {
     // we want the local beam target in rad
     beam_target[0] = beam_target[0] * M_PI / 180;
     beam_target[1] = beam_target[1] * M_PI / 180;
-    ROS_ERROR("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
+    ROS_INFO("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
 
 }
 
@@ -330,8 +330,7 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     std::ostringstream temp;
     temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) <<",rightlim="<< rad2steps( wrapRad(right_limit) )<<"";
     sonar_command.data = temp.str();
-    ROS_INFO("sonar_positioning - left_limit: %f, right_limit: %f", wrapRad(left_limit), wrapRad(right_limit) );
-    ROS_INFO("%s",sonar_command.data.c_str());
+    ROS_INFO("sonar_positioning - %s -left_limit: %f, right_limit: %f", axis.c_str(), wrapRad(left_limit), wrapRad(right_limit) );
     pub_sonar_command.publish(sonar_command);
     return EXIT_SUCCESS;
 }
@@ -373,7 +372,7 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     // THe sonar points now wherever we want it.
     if (process_sonar(message) == EXIT_SUCCESS) {
 
-        if ( (axis == "x" && variance_x_found) || (axis == "y" && variance_y_found) ){
+        if ( (axis == "x" && variance_x_found == true) || (axis == "y" && variance_y_found == true) ){
             
             // Dynamic transform publish which allows for 
             publish_position(axis);
@@ -421,10 +420,18 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     }
 
     // Find the wall in the noisy data
-    double d_hypot = 0;
+/* 
+   double d_hypot = 0;
     if( sonar2Distance(message, &d_hypot) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }
+*/
+    ROS_INFO("sonar_position - %s - angle: %3f", axis.c_str() , angle_rad/DEG2RAD);
+
+    double d_hypot = 0;
+    if( blurred_valleys_mountains(message, &d_hypot) == EXIT_FAILURE) {
+        return EXIT_FAILURE;
+    }    
 
     ROS_INFO("sonar_position - %s - angle: %3f, d_hypot: %f", axis.c_str() , angle_rad/DEG2RAD, d_hypot);
 
@@ -544,46 +551,64 @@ double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&
     }
 }
 
-int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr& message) {
+int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr& message, double * d_hypot) {
     get_processing_parameters();
 
     int numBins = message->data[1];
     // the maximum distance to be found in dM
     double range = message->data[2]/10;
     // ensure we are staying within the message and that neither of these numbers are NaN
-    if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins != 0) ) {
-        
+    if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins >= 10) ) {
+        std::vector<double> temp;
+
         if(bvm_data_setup == false) {
+            temp.resize(numBins,0.1);
             bvm_data.clear();
             bvm_data.resize(3);
             bvm_data_setup = true;
+            bvm_data.at(0) = temp;
+            bvm_data.at(1) = temp;
+            bvm_data.at(2) = temp;
         }
-
         // store the data in the circular buffer
-        std::vector<double> temp;
         std::vector<double> blurred;
         temp.assign(message->data.begin()+3, message->data.end());
         bvm_data.push_back(temp);
-
         // Convolution with a kernel = ones(3), kernel(2,2) = 0;
-        blurred[0] = bvm_data[1][0];
+        blurred.reserve(numBins);
+        // assign the first and last value, convolution cant do this
+        blurred.push_back(bvm_data[1][0] );
+
         for (int x = 1; x < numBins-1; x++) {
 
-            blurred[x] = (bvm_data[0][x] + bvm_data[2][x] + bvm_data[0][x-1] + bvm_data[1][x-1] + bvm_data[2][x-1] + bvm_data[0][x+1] + bvm_data[1][x+1] + bvm_data[2][x+2])/8;
+            blurred.push_back(bvm_data[1][x] + (bvm_data[0][x] + bvm_data[2][x] + bvm_data[0][x-1] + bvm_data[1][x-1] + bvm_data[2][x-1] + bvm_data[0][x+1] + bvm_data[1][x+1] + bvm_data[2][x+2])/8 );
         }
+        blurred.push_back(*bvm_data[2].end() );
 
-        for (std::vector<double>::iterator itx = blurred.begin(); itx < blurred.end()-20; ++itx) {
-            // is the valley low enough (and is it after the crappy sensor area)
-            if ( mean(blurred, blurred.begin()+skip_bins, blurred.begin()+9) <= valley_limit) {
-                // is the mountain high enough find the peak
-                if (mean(blurred, blurred.begin()+skip_bins+10, blurred.begin()+skip_bins+skip_bins+20) >= mountain_minimum) {
-                    std::vector<double>::iterator it = std::max_element(blurred.begin()+10+skip_bins, blurred.begin()+skip_bins+20);
+        // Go through all datapoints after the crappy sensor area
+        for (std::vector<double>::iterator itx = blurred.begin()+skip_bins; itx != (blurred.end()-20); ++itx) {
+           
+            // is the valley low enough
+            if ( mean(blurred, itx, itx+10) <= valley_limit) {
+           
+                // is the mountain high enough find the peak                
+                if (mean(blurred,itx+10, itx+20) >= mountain_minimum) {
+
+                    std::vector<double>::iterator it = std::max_element(itx+10, itx+20);
+                    
                     // and return the peaks position
-                    return (it - blurred.begin());
+                    *d_hypot = ( (double)(it - blurred.begin()) ) * (range / (double) numBins);
+                    
+                    return EXIT_SUCCESS;
                 } 
             }
         }
+        ROS_ERROR("sonar_position - %s - BVM Could not find wall", axis.c_str());
+        return EXIT_FAILURE;
     }
+    ROS_ERROR("sonar_position - %s - data broken", axis.c_str());
+
+    return EXIT_FAILURE;
 }
 
 /** getOdomDistance(): find the distance to the assumed vertical wall 
@@ -658,7 +683,6 @@ double sonar_position::mean(const std::vector<double> vec, typename std::vector<
         sum += (*it);
         // if size is not == 0, divide by size, else return 0
     }
-
     return (size)?(sum/(double) size):0;
 }
 

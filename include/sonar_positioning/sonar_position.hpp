@@ -76,7 +76,7 @@ private:
     int rad2steps(double );
     int deg2steps(double );
     int process_sonar(const std_msgs::Int32MultiArray::ConstPtr&);
-    int blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr& );
+    int blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr&, double * );
     void get_sonar_calibration_data(void);
     void get_transform_parameters(void);
     void get_ENU_beam_targets(void);
