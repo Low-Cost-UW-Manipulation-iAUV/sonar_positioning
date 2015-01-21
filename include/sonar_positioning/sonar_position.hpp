@@ -7,6 +7,7 @@
 #include <boost/circular_buffer.hpp>
 #include "sensor_msgs/Imu.h"
 #include "nav_msgs/Odometry.h"
+#include "sonar_positioning/MayI.h"
 
 namespace sonar {
 
@@ -34,6 +35,7 @@ private:
     ros::Subscriber sub_sonar;
     ros::Publisher pub_position;
     ros::Publisher pub_sonar_command;
+
     double yaw, pitch, roll;
     double last_distance;
     double position;

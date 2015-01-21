@@ -100,9 +100,9 @@ void sonar_position::do_subs_pubs(void) {
         ROS_ERROR("Sonar Position: cant find which rostopic to publish commands to,error \n");
         ros::shutdown();
     } 
-    pub_sonar_command = nh_.advertise<std_msgs::String>(temp_string, 5);   
+    pub_sonar_command = nh_.advertise<std_msgs::String>(temp_string, 5);
+    
 }
-
 
 
 void sonar_position::get_sonar_calibration_data(void) {
@@ -748,6 +748,7 @@ double sonar_position::wrapDeg(double angle) {
     if (angle <= -180) return 360. + angle;
     return angle;
 }
+
 
 }  //end of namespace
 
