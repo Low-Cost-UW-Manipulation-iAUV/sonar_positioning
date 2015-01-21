@@ -426,8 +426,6 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
         return EXIT_FAILURE;
     }
 */
-    ROS_INFO("sonar_position - %s - angle: %3f", axis.c_str() , angle_rad/DEG2RAD);
-
     double d_hypot = 0;
     if( blurred_valleys_mountains(message, &d_hypot) == EXIT_FAILURE) {
         return EXIT_FAILURE;
@@ -576,13 +574,14 @@ int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::C
         bvm_data.push_back(temp);
         // Convolution with a kernel = ones(3), kernel(2,2) = 0;
         blurred.reserve(numBins);
-        // assign the first and last value, convolution cant do this
+        // assign the first value,  convolution cant do this
         blurred.push_back(bvm_data[1][0] );
 
         for (int x = 1; x < numBins-1; x++) {
 
             blurred.push_back(bvm_data[1][x] + (bvm_data[0][x] + bvm_data[2][x] + bvm_data[0][x-1] + bvm_data[1][x-1] + bvm_data[2][x-1] + bvm_data[0][x+1] + bvm_data[1][x+1] + bvm_data[2][x+2])/8 );
         }
+        // assign the first value,  convolution cant do this
         blurred.push_back(*bvm_data[2].end() );
 
         // Go through all datapoints after the crappy sensor area
