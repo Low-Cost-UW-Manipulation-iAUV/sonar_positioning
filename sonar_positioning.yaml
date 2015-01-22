@@ -1,6 +1,6 @@
 sonar: #The config file for the sonar_positioning
     number_of_sonars: 2
-    sonar0:
+    sonar_positioning_0:
         listen_to: /sonarData0
         publish_commands_to: /sonarRequest0
         publish_data_to: /sonar/position0
@@ -18,7 +18,7 @@ sonar: #The config file for the sonar_positioning
             wall_threshold: 3
             mountain_minimum: 70
             valley_limit: 10
-    sonar1:
+    sonar_positioning_1:
         listen_to: /sonarData1
         publish_commands_to: /sonarRequest1
         publish_data_to: /sonar/position1

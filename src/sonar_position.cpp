@@ -328,7 +328,7 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     std_msgs::String sonar_command;    
 
     std::ostringstream temp;
-    temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) <<",rightlim="<< rad2steps( wrapRad(right_limit) )<<"";
+    temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) << ",rightlim=" << rad2steps( wrapRad(right_limit) )<<"";
     sonar_command.data = temp.str();
     ROS_INFO("sonar_positioning - %s -left_limit: %f, right_limit: %f", axis.c_str(), wrapRad(left_limit), wrapRad(right_limit) );
     pub_sonar_command.publish(sonar_command);
@@ -760,8 +760,8 @@ int main(int argc, char **argv) {
     ros::AsyncSpinner spinner(4);
     spinner.start();
     // create the instance of the class
-    sonar::sonar_position orange_box_0(nh, "sonar0");
-    sonar::sonar_position orange_box_1(nh, "sonar1");
+    sonar::sonar_position orange_box_0(nh, "sonar_positioning_0");
+    sonar::sonar_position orange_box_1(nh, "sonar_positioning_1");
 
     // register the 
     ros::spin();
