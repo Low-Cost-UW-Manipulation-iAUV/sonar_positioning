@@ -638,7 +638,7 @@ void sonar_position::publish_position(std::string axis) {
     } else if(axis == "y") {
         sonar_position.pose.pose.position.y = position;
         // set the variance data for y
-        sonar_position.pose.covariance[1] = variance_y;
+        sonar_position.pose.covariance[7] = variance_y;
     }
 
 
