@@ -13,6 +13,8 @@ sonar: #The config file for the sonar_positioning
                 beam_target: [2.05, 358]
                 offset_angle: 0
                 axis: x
+                update_rate: 1
+                heading_threshold: 10
             skip_bins: 0  # 0.7 in real life
             consecutive_bin_value_threshold: 100
             wall_threshold: 3
@@ -31,6 +33,8 @@ sonar: #The config file for the sonar_positioning
                 beam_target: [100, 80]
                 offset_angle: -90  # input in deg here, but will get converted into rad
                 axis: y
+                update_rate: 1   
+                heading_threshold: 10
             skip_bins: 0  # 0.7 in real life
             consecutive_bin_value_threshold: 100
             wall_threshold: 3

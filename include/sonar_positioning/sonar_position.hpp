@@ -53,6 +53,8 @@ private:
     // The width of what we call forwards in RADIANS. i.e. from +10deg to -10deg. View is top down with right hand frame
     std::vector<double> beam_target;
     std::string axis;
+    double update_rate;
+    ros::Timer timer_update;
 
 
     // transform broadcaster that will publish the transform odom->sonar and odom->svs
@@ -72,7 +74,8 @@ private:
     double valley_limit;
     double mountain_minimum;
     double skip_bins;
-
+    double old_yaw;
+    double heading_threshold;
     double steps2rad(int );
     int rad2steps(double );
     int deg2steps(double );
@@ -85,6 +88,8 @@ private:
     void get_processing_parameters(void);
     int store_variance(double , std::string);
     int track_wall(double, double);
+    int track_wall(void);
+    void timed_wall_tracking(const ros::TimerEvent & );
 
     double mean(const std::vector<double>);
     double mean(const std::vector<double> , typename std::vector<double>::const_iterator , typename std::vector<double>::const_iterator );

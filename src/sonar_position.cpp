@@ -23,6 +23,17 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     nh_ = nh;
     sonar_name_ = sonar_name;
 
+
+// Prep variables    
+    yaw = 0;
+    old_yaw = 0;
+    pitch = 0;
+    roll = 0;
+    last_distance = 0;
+    sonar_configured = false;
+    bvm_data_setup = false;
+    update_rate = 1;
+
 // Setup the publications and subscription
     do_subs_pubs();
 
@@ -39,16 +50,14 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     get_angular_offset();
 
 
-// Prep variables    
-    yaw = 0;
-    pitch = 0;
-    roll = 0;
-    last_distance = 0;
-    sonar_configured = false;
-    bvm_data_setup = false;
-
 // Prep the processing parameters
     get_processing_parameters();
+
+// Track the wall at the specified 
+    if(update_rate != 0) {
+        ros::Duration update_freq = ros::Duration(1.0/update_rate);
+        timer_update = nh_.createTimer(update_freq, &sonar_position::timed_wall_tracking, this);
+    }
 }
 
 sonar_position::~sonar_position() {
@@ -57,7 +66,7 @@ sonar_position::~sonar_position() {
 
 void sonar_position::do_subs_pubs(void) {
     sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
-   // sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
+    //sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
 
     std::string temp_string;
     std::ostringstream param_address;
@@ -263,6 +272,29 @@ void sonar_position::get_ENU_beam_targets(void) {
     beam_target[0] = beam_target[0] * M_PI / 180;
     beam_target[1] = beam_target[1] * M_PI / 180;
     ROS_INFO("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
+    
+    axis = "";
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/update_rate";
+    if (!nh_.getParamCached(param_address.str(), update_rate)) {
+        ROS_ERROR("Sonar Position: Could not find update_rate, assuming 1 Hz\n");
+        update_rate = 1;
+        nh_.setParam(param_address.str(), update_rate);        
+    }
+
+    axis = "";
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/heading_threshold";
+    if (!nh_.getParamCached(param_address.str(), heading_threshold)) {
+        ROS_ERROR("Sonar Position: Could not find heading_threshold, assuming 10°\n");
+        heading_threshold = 10;
+        nh_.setParam(param_address.str(), heading_threshold);
+    }
+            heading_threshold = heading_threshold * M_PI/180;
+
+
 
 }
 
@@ -339,7 +371,7 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
 */
-void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message ) {//const nav_msgs::Odometry::ConstPtr& message) {
+void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message ) { // const nav_msgs::Odometry::ConstPtr& message) {
 
 //    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
     tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
@@ -347,7 +379,7 @@ void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message 
     tf::Matrix3x3 m(q);
 
     m.getRPY(roll, pitch, yaw);
-
+    ROS_INFO("yaw: %f, pitch: %f, roll: %f", yaw*180/M_PI, pitch*180/M_PI, roll*180/M_PI);
     imu_timestamp = message->header.stamp;
 
     // Publish the odom->SVS transform as good brothers do.
@@ -380,12 +412,19 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     }
 }
 
+void sonar_position::timed_wall_tracking(const ros::TimerEvent & event) {
+    if (sonar_configured == true && (fabs(yaw - old_yaw) >= heading_threshold ) ) { //
+        old_yaw = yaw;
+        track_wall();
+    }
+
+}
 
 /** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
-        Maybe we need to limit the number of updates we send here... 
+        Maybe we need to limit the number of updates we send here... WE DO!
+        This one gets called once for setting up
 */
 int sonar_position::track_wall(double left_subtrahend, double right_subtrahend) {
-    
     // Update the beam target
     get_ENU_beam_targets();
     double left = beam_target[0] - left_subtrahend;
@@ -397,6 +436,25 @@ int sonar_position::track_wall(double left_subtrahend, double right_subtrahend) 
     }
 }
 
+/** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
+        This gets called on the timer basis
+*/
+int sonar_position::track_wall(void) {
+
+    // Update the beam target
+    get_ENU_beam_targets();
+    double wrapped_yaw = wrapRad(yaw);
+
+    double left = beam_target[0] - wrapped_yaw;
+    double right = beam_target[1] - wrapped_yaw;
+
+
+    if (send_limits_sonar(left, right) == EXIT_SUCCESS) {
+        return EXIT_SUCCESS;
+    } else {
+        return EXIT_FAILURE;
+    }
+}
 
 
 /** process_sonar(): Does the actual sonar processing
@@ -404,7 +462,7 @@ int sonar_position::track_wall(double left_subtrahend, double right_subtrahend) 
 int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
     double angle_rad = steps2rad(message->data[0]);
 
-    // if our beam_target is not crossing 0
+  /*  // if our beam_target is not crossing 0
     if(beam_target[0] >= beam_target[1]) {
         if(angle_rad >= beam_target[1] && angle_rad <= beam_target[0]) {// we are withing the beam targets which do not wrap
         } else {
@@ -417,7 +475,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
             ROS_ERROR("sonar_position - %s - sonar scans at %f outside of demanded area (discontinous area)", axis.c_str(), angle_rad*180/M_PI);
             return EXIT_FAILURE;
         }
-    }
+    }*/
 
     // Find the wall in the noisy data
 /* 
@@ -437,7 +495,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 
         if(variance_x_found == true) {
             // get the shortest distance from the hypothenuse.  
-            position = abs(sin(yaw-angle_rad)*d_hypot);
+            position = abs(cos(yaw-angle_rad)*d_hypot);
             angle = angle_rad;
             return EXIT_SUCCESS;
         } else { // we haven't got any variance data.
@@ -455,7 +513,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 
     } else if(axis == "y") {
        if(variance_y_found == true) {
-            position = abs(sin(yaw-angle_rad)*d_hypot);
+            position = abs(cos(yaw-angle_rad)*d_hypot);
             angle = angle_rad;
             return EXIT_SUCCESS;
         } else { // we haven't got any variance data.
@@ -758,7 +816,7 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     /// An Async spinner creates another thread which will handle the event of this node being executed.
  
-    ros::AsyncSpinner spinner(4);
+    ros::AsyncSpinner spinner(8);
     spinner.start();
     // create the instance of the class
     sonar::sonar_position orange_box_0(nh, "sonar_positioning_0");
