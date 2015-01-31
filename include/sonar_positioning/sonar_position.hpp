@@ -7,7 +7,6 @@
 #include <boost/circular_buffer.hpp>
 #include "sensor_msgs/Imu.h"
 #include "nav_msgs/Odometry.h"
-#include "sonar_positioning/MayI.h"
 
 namespace sonar {
 
