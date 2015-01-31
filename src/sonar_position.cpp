@@ -436,7 +436,8 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     if(axis == "x") {
 
         if(variance_x_found == true) {
-            position = d_hypot;
+            // get the shortest distance from the hypothenuse.  
+            position = abs(sin(yaw-angle_rad)*d_hypot);
             angle = angle_rad;
             return EXIT_SUCCESS;
         } else { // we haven't got any variance data.
@@ -454,7 +455,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 
     } else if(axis == "y") {
        if(variance_y_found == true) {
-            position = d_hypot;
+            position = abs(sin(yaw-angle_rad)*d_hypot);
             angle = angle_rad;
             return EXIT_SUCCESS;
         } else { // we haven't got any variance data.
