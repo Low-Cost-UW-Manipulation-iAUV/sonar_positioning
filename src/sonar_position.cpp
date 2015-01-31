@@ -379,7 +379,6 @@ void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message 
     tf::Matrix3x3 m(q);
 
     m.getRPY(roll, pitch, yaw);
-    ROS_INFO("yaw: %f, pitch: %f, roll: %f", yaw*180/M_PI, pitch*180/M_PI, roll*180/M_PI);
     imu_timestamp = message->header.stamp;
 
     // Publish the odom->SVS transform as good brothers do.
