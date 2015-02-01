@@ -17,7 +17,7 @@ public:
     void do_subs_pubs(void);
 
 private:
-    void sub_callback_imu(const sensor_msgs::Imu::ConstPtr&);//const nav_msgs::Odometry::ConstPtr&);
+    void sub_callback_imu(const nav_msgs::Odometry::ConstPtr&); //const sensor_msgs::Imu::ConstPtr&);
     void sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& );
 
     double sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&, double *);

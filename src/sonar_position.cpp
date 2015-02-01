@@ -65,8 +65,8 @@ sonar_position::~sonar_position() {
 }
 
 void sonar_position::do_subs_pubs(void) {
-    sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
-    //sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
+    //sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
+    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
 
     std::string temp_string;
     std::ostringstream param_address;
@@ -371,14 +371,15 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
 */
-void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message ) { // const nav_msgs::Odometry::ConstPtr& message) {
+void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& message) {//const sensor_msgs::Imu::ConstPtr& message ) {
 
-//    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
-    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
+    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
+//    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
 
     tf::Matrix3x3 m(q);
 
     m.getRPY(roll, pitch, yaw);
+    ROS_INFO("Yaw: %f, Pitch: %f, Roll: %f",  yaw*180/M_PI, pitch*180/M_PI, roll*180/M_PI);
     imu_timestamp = message->header.stamp;
 
     // Publish the odom->SVS transform as good brothers do.
