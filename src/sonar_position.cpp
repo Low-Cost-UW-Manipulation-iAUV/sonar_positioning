@@ -29,10 +29,12 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     old_yaw = 0;
     pitch = 0;
     roll = 0;
+    heading_offset = 0;
     last_distance = 0;
     sonar_configured = false;
     bvm_data_setup = false;
     update_rate = 1;
+    relative_to_startup_heading = false;
 
 // Setup the publications and subscription
     do_subs_pubs();
@@ -43,15 +45,17 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 // Get transform frame_ids from parameter server
     get_transform_parameters();
 
+// Advertise the two services
+    sonar_heading_service_give_reference = nh_.advertiseService("give_sonar_reference", &sonar_position::give_sonar_reference, this);
+    sonar_heading_service_take_imu_as_reference = nh_.advertiseService("imu_as_sonar_reference", &sonar_position::imu_as_sonar_reference, this);
+
 // Get the (initial) target headings for the sonar
     get_ENU_beam_targets();
-
-// Get the angular offset for the transformation
-    get_angular_offset();
 
 
 // Prep the processing parameters
     get_processing_parameters();
+
 
 // Track the wall at the specified 
     if(update_rate != 0) {
@@ -63,6 +67,76 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 sonar_position::~sonar_position() {
 
 }
+
+/** give_sonar_reference(): ROS service that expects a sonar yaw reference in ENU and stores it on the parameter server in 
+                            /sonar/sonar_positioning_n/processing_params/track_wall/beam_target
+*/
+bool sonar_position::give_sonar_reference(sonar_positioning::sonar_heading_reference::Request &req, sonar_positioning::sonar_heading_reference::Response &res) {
+    std::ostringstream param_address;
+    axis = "";
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
+    std::vector<double> heading_request_temp;
+    heading_request_temp.clear();
+    heading_request_temp.push_back( req.sonar_heading_reference.at(0) );
+    heading_request_temp.push_back( req.sonar_heading_reference.at(1) );
+
+    nh_.setParam(param_address.str(), heading_request_temp);
+    
+    std::vector<double> temp;
+    temp.clear();
+    nh_.getParam(param_address.str(), temp);
+    if (temp != heading_request_temp) {
+        ROS_ERROR("Sonar Position: Could not set sonar_reference assuming\n");
+        res.ok = false;
+        return EXIT_FAILURE;
+    }
+    // set the relative_to_startup_heading boolean
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/relative_to_startup_heading";
+    nh_.setParam(param_address.str(), false);
+
+    res.ok = true;
+    return EXIT_SUCCESS;
+}
+
+/** give_sonar_reference(): ROS service that expects a sonar yaw reference RELATIVE TO THE CURRENT HEADING and stores it on the parameter server in 
+                            /sonar/sonar_positioning_n/processing_params/track_wall/beam_target
+*/
+bool sonar_position::imu_as_sonar_reference(sonar_positioning::sonar_heading_reference::Request &req, sonar_positioning::sonar_heading_reference::Response &res) {
+
+    std::vector<double> temp;
+    temp.clear();
+    temp.push_back(req.sonar_heading_reference.at(0) + yaw);
+    temp.push_back(req.sonar_heading_reference.at(1) + yaw);
+
+    std::ostringstream param_address;
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
+    nh_.setParam(param_address.str(), temp);
+
+    std::vector<double> tempered;
+    tempered.clear();
+    nh_.getParam(param_address.str(), tempered);
+    if (temp != tempered) {
+        ROS_ERROR("Sonar Position: Could not set sonar_reference assuming\n");
+        res.ok = false;
+        return EXIT_FAILURE;
+    }
+
+    // set the relative_to_startup_heading boolean
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/relative_to_startup_heading";
+    nh_.setParam(param_address.str(), true);
+
+    res.ok = true;
+    return EXIT_SUCCESS;
+}
+
 
 void sonar_position::do_subs_pubs(void) {
     //sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
@@ -204,6 +278,24 @@ void sonar_position::get_transform_parameters(void) {
     transform_y = temp[1];
     transform_z = temp[2];
 
+  
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/orientation_base_link_frame";
+    
+    temp.clear();    
+    if (!nh_.getParam(param_address.str(), temp)) {
+
+        ROS_ERROR("Sonar Position: couldn't find orientation_base_link_frame, assuming 0\n");
+        temp[0] = 0.0;
+        temp[1] = 0.0;
+        temp[2] = 0.0;
+        nh_.setParam(param_address.str(), temp);
+    }
+    mounting_offset_yaw = temp[0];
+    mounting_offset_pitch = temp[1];
+    mounting_offset_roll = temp[2];
+
 
     temp.clear();
     if (!nh_.getParam("/sonar/svs/position_base_link_frame", temp)) {
@@ -226,21 +318,9 @@ void sonar_position::get_transform_parameters(void) {
     }
 }
 
-void sonar_position::get_angular_offset(void) {
-    std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/offset_angle";  
-    if (!nh_.getParam(param_address.str(), offset_angle)) {
-
-        ROS_ERROR("Sonar Position: Could not find offset_angle, assuming 0\n");
-        offset_angle = 0;
-        nh_.setParam(param_address.str(), offset_angle);
-    }    
-}
-
 
 /** get_ENU_beam_targets(): Get the initial heading (ENU) we want the sonar to look at.
+        THis might be in reference to 
 */
 void sonar_position::get_ENU_beam_targets(void) {
     beam_target.clear();
@@ -254,7 +334,7 @@ void sonar_position::get_ENU_beam_targets(void) {
     if (!nh_.getParamCached(param_address.str(), axis)) {
         ROS_ERROR("Sonar Position: Could not find axis, assuming x\n");
         axis = "x";
-        nh_.setParam(param_address.str(), axis);        
+        nh_.setParam(param_address.str(), axis);
     }
 
     param_address.clear();
@@ -272,7 +352,22 @@ void sonar_position::get_ENU_beam_targets(void) {
     beam_target[0] = beam_target[0] * M_PI / 180;
     beam_target[1] = beam_target[1] * M_PI / 180;
     ROS_INFO("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
-    
+  
+
+    // is the beam_target relative to the initial heading? Then prep to set this up upon first IMU callback
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/relative_to_startup_heading";
+    if (!nh_.getParamCached(param_address.str(), relative_to_startup_heading)) {
+
+        ROS_ERROR("Sonar Position: Could not find if relative_to_startup_heading, assuming TRUE\n");
+        
+        relative_to_startup_heading = true;
+        nh_.setParam(param_address.str(), relative_to_startup_heading);
+    } 
+        relative_to_startup_heading_is_set = false;
+
+
     axis = "";
     param_address.clear();
     param_address.str("");
@@ -293,9 +388,6 @@ void sonar_position::get_ENU_beam_targets(void) {
         nh_.setParam(param_address.str(), heading_threshold);
     }
             heading_threshold = heading_threshold * M_PI/180;
-
-
-
 }
 
 
@@ -377,14 +469,29 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 //    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
 
     tf::Matrix3x3 m(q);
+    double temp_r, temp_p, temp_y;
+    m.getRPY(temp_r, temp_p, temp_y);
+    // unwrap anything --> just to be sure
+    roll = wrapRad(temp_r);
+    pitch = wrapRad(temp_p);
+    yaw = wrapRad(temp_y);
 
-    m.getRPY(roll, pitch, yaw);
+    /// set the store the offset to north (the error to north...)
+    if(relative_to_startup_heading == true && relative_to_startup_heading_is_set == false) {
+
+        heading_offset = yaw;
+
+        relative_to_startup_heading_is_set = true;
+    }
+
+
     ROS_INFO("Yaw: %f, Pitch: %f, Roll: %f",  yaw*180/M_PI, pitch*180/M_PI, roll*180/M_PI);
     imu_timestamp = message->header.stamp;
 
     // Publish the odom->SVS transform as good brothers do.
-
     publish_transform(svs_transform_x, svs_transform_y, svs_transform_z,  yaw,pitch,roll, parent_frame_id,svs_child_frame_id);
+
+    // Publish the sonars transform
     publish_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);
 
 }
@@ -393,15 +500,6 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 /** sub_callback_sonar(): transforms the sonar data and publishes it as a position update for the sensor fusion.
 */
 void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
-    // let the sonar track the wall.
-    while (sonar_configured == false) {
-        if(track_wall(0.0, 0.0) == EXIT_SUCCESS) {
-            sonar_configured = true;
-        }
-
-    }
-
-    // THe sonar points now wherever we want it.
     if (process_sonar(message) == EXIT_SUCCESS) {
 
         if ( (axis == "x" && variance_x_found == true) || (axis == "y" && variance_y_found == true) ){
@@ -420,21 +518,6 @@ void sonar_position::timed_wall_tracking(const ros::TimerEvent & event) {
 
 }
 
-/** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
-        Maybe we need to limit the number of updates we send here... WE DO!
-        This one gets called once for setting up
-*/
-int sonar_position::track_wall(double left_subtrahend, double right_subtrahend) {
-    // Update the beam target
-    get_ENU_beam_targets();
-    double left = beam_target[0] - left_subtrahend;
-    double right = beam_target[1] - right_subtrahend;
-    if (send_limits_sonar(left, right) == EXIT_SUCCESS) {
-        return EXIT_SUCCESS;
-    } else {
-        return EXIT_FAILURE;
-    }
-}
 
 /** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
         This gets called on the timer basis
@@ -443,10 +526,17 @@ int sonar_position::track_wall(void) {
 
     // Update the beam target
     get_ENU_beam_targets();
-    double wrapped_yaw = wrapRad(yaw);
+   double left, right;
+    // if the beam headings are relative to the initial heading at startup
+    if (relative_to_startup_heading == true ) {
+        //      (current heading relative to pool wall) + left - mounting
+        left  = (yaw - heading_offset) + beam_target[0] - mounting_offset_yaw;
+        right  = (yaw - heading_offset) + beam_target[1] - mounting_offset_yaw;
 
-    double left = beam_target[0] - wrapped_yaw;
-    double right = beam_target[1] - wrapped_yaw;
+    } else {
+        left  = yaw + beam_target[0] - mounting_offset_yaw ;
+        right = yaw + beam_target[1] - mounting_offset_yaw ;
+    }
 
 
     if (send_limits_sonar(left, right) == EXIT_SUCCESS) {
@@ -460,42 +550,24 @@ int sonar_position::track_wall(void) {
 /** process_sonar(): Does the actual sonar processing
 */
 int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& message) {
+    
+    // get the angle in rad from the sonar steps
     double angle_rad = steps2rad(message->data[0]);
 
-  /*  // if our beam_target is not crossing 0
-    if(beam_target[0] >= beam_target[1]) {
-        if(angle_rad >= beam_target[1] && angle_rad <= beam_target[0]) {// we are withing the beam targets which do not wrap
-        } else {
-            ROS_ERROR("sonar_position - %s - sonar scans at %f outside of demanded area (continous area)", axis.c_str(), angle_rad*180/M_PI);
-            return EXIT_FAILURE;
-        }
-    } else {
-        if((angle_rad >= beam_target[1] && angle_rad <= 2*M_PI) || (angle_rad <= beam_target[0] && angle_rad >= 0) ) { //as above but crossing 360/0 discontinuity
-        } else {
-            ROS_ERROR("sonar_position - %s - sonar scans at %f outside of demanded area (discontinous area)", axis.c_str(), angle_rad*180/M_PI);
-            return EXIT_FAILURE;
-        }
-    }*/
-
-    // Find the wall in the noisy data
-/* 
-   double d_hypot = 0;
-    if( sonar2Distance(message, &d_hypot) == EXIT_FAILURE) {
-        return EXIT_FAILURE;
-    }
-*/
+    // find the wall and the  distance (hypotenuse) to it
     double d_hypot = 0;
     if( blurred_valleys_mountains(message, &d_hypot) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }    
-
     ROS_INFO("sonar_position - %s - angle: %3f, d_hypot: %f", axis.c_str() , angle_rad/DEG2RAD, d_hypot);
+    
+    // get the shortest distance from the hypothenuse.  
+    double adjascent = abs(cos(yaw-angle_rad)*d_hypot);    
 
     if(axis == "x") {
 
         if(variance_x_found == true) {
-            // get the shortest distance from the hypothenuse.  
-            position = abs(cos(yaw-angle_rad)*d_hypot);
+            position = adjascent;
             angle = angle_rad;
             return EXIT_SUCCESS;
         } else { // we haven't got any variance data.
@@ -507,13 +579,13 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
                 }
                 return EXIT_SUCCESS;
             }
-            x_variance_data.push_back(d_hypot);
+            x_variance_data.push_back(adjascent);
             ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d", x_variance_data.size(), calibration_length);
         }
 
     } else if(axis == "y") {
        if(variance_y_found == true) {
-            position = abs(cos(yaw-angle_rad)*d_hypot);
+            position = adjascent;
             angle = angle_rad;
             return EXIT_SUCCESS;
         } else { // we haven't got any variance data.
@@ -525,7 +597,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
                 }
                 return EXIT_SUCCESS;
             }
-            y_variance_data.push_back(d_hypot);
+            y_variance_data.push_back(adjascent);
             ROS_INFO("sonar_position: Determining Sonar variance on y - Sample %lu of %d", y_variance_data.size(), calibration_length);
         }
 

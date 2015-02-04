@@ -7,6 +7,7 @@
 #include <boost/circular_buffer.hpp>
 #include "sensor_msgs/Imu.h"
 #include "nav_msgs/Odometry.h"
+#include "sonar_positioning/sonar_heading_reference.h"
 
 namespace sonar {
 
@@ -19,6 +20,12 @@ public:
 private:
     void sub_callback_imu(const nav_msgs::Odometry::ConstPtr&); //const sensor_msgs::Imu::ConstPtr&);
     void sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& );
+    ros::ServiceServer sonar_heading_service_give_reference;
+    ros::ServiceServer sonar_heading_service_take_imu_as_reference;
+    bool give_sonar_reference(sonar_positioning::sonar_heading_reference::Request &, sonar_positioning::sonar_heading_reference::Response &);
+    bool imu_as_sonar_reference(sonar_positioning::sonar_heading_reference::Request &, sonar_positioning::sonar_heading_reference::Response &);
+    bool relative_to_startup_heading;
+    bool relative_to_startup_heading_is_set;
 
     double sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&, double *);
     double getOdomDistance(float, double, double);
@@ -36,10 +43,10 @@ private:
     ros::Publisher pub_sonar_command;
 
     double yaw, pitch, roll;
+    double heading_offset;
     double last_distance;
     double position;
     double angle;
-    double offset_angle;
     bool variance_x_found, variance_y_found;
     ros::Time imu_timestamp;
     bool sonar_configured;
@@ -65,6 +72,10 @@ private:
     double transform_x;
     double transform_y;
     double transform_z;
+    double mounting_offset_yaw;
+    double mounting_offset_pitch;
+    double mounting_offset_roll;
+
     double svs_transform_x;
     double svs_transform_y;
     double svs_transform_z;
@@ -87,7 +98,6 @@ private:
     void get_angular_offset(void);
     void get_processing_parameters(void);
     int store_variance(double , std::string);
-    int track_wall(double, double);
     int track_wall(void);
     void timed_wall_tracking(const ros::TimerEvent & );
 
