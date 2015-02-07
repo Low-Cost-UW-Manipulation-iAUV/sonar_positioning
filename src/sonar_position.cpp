@@ -73,7 +73,6 @@ sonar_position::~sonar_position() {
 */
 bool sonar_position::give_sonar_reference(sonar_positioning::sonar_heading_reference::Request &req, sonar_positioning::sonar_heading_reference::Response &res) {
     std::ostringstream param_address;
-    axis = "";
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
@@ -122,7 +121,7 @@ bool sonar_position::imu_as_sonar_reference(sonar_positioning::sonar_heading_ref
     tempered.clear();
     nh_.getParam(param_address.str(), tempered);
     if (temp != tempered) {
-        ROS_ERROR("Sonar Position: Could not set sonar_reference assuming\n");
+        ROS_ERROR("Sonar Position: Could not set sonar_reference\n");
         res.ok = false;
         return EXIT_FAILURE;
     }
@@ -368,7 +367,6 @@ void sonar_position::get_ENU_beam_targets(void) {
         relative_to_startup_heading_is_set = false;
 
 
-    axis = "";
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/update_rate";
@@ -378,7 +376,6 @@ void sonar_position::get_ENU_beam_targets(void) {
         nh_.setParam(param_address.str(), update_rate);        
     }
 
-    axis = "";
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/heading_threshold";
@@ -559,10 +556,10 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     if( blurred_valleys_mountains(message, &d_hypot) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }    
-    ROS_INFO("sonar_position - %s - angle: %3f, d_hypot: %f", axis.c_str() , angle_rad/DEG2RAD, d_hypot);
+    ROS_INFO("sonar_position %s -  %s - angle: %3f, d_hypot: %f",sonar_name_.c_str(), axis.c_str() , angle_rad/DEG2RAD, d_hypot);
     
     // get the shortest distance from the hypothenuse.  
-    double adjascent = abs(cos(yaw + angle_rad + mounting_offset_yaw - heading_offset) * d_hypot);    
+    double adjascent = fabs(cos(yaw + angle_rad + mounting_offset_yaw - heading_offset) * d_hypot);    
 
     if(axis == "x") {
 
@@ -573,6 +570,8 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
         } else { // we haven't got any variance data.
 
             if(x_variance_data.size() >= calibration_length) {
+                ROS_INFO("sonar_position - %s: Determining Sonar variance on x - Sample %lu of %d",sonar_name_.c_str(), x_variance_data.size(), calibration_length);
+
                 variance_x = pow( std2(x_variance_data, mean(x_variance_data) ), 2);
                 if(store_variance(variance_x, axis) == EXIT_SUCCESS) {
                     variance_x_found = true;
@@ -581,6 +580,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
             }
             x_variance_data.push_back(adjascent);
             ROS_INFO("sonar_position: Determining Sonar variance on x - Sample %lu of %d", x_variance_data.size(), calibration_length);
+            return EXIT_FAILURE;
         }
 
     } else if(axis == "y") {
@@ -599,6 +599,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
             }
             y_variance_data.push_back(adjascent);
             ROS_INFO("sonar_position: Determining Sonar variance on y - Sample %lu of %d", y_variance_data.size(), calibration_length);
+            return EXIT_FAILURE;            
         }
 
     }
@@ -770,6 +771,8 @@ void sonar_position::publish_position(std::string axis) {
         sonar_position.pose.pose.position.y = position;
         // set the variance data for y
         sonar_position.pose.covariance[7] = variance_y;
+    } else {
+        ROS_ERROR("sonar_position - no axis found...");
     }
 
 
