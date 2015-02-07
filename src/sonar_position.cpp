@@ -563,7 +563,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     ROS_INFO("sonar_position %s -  %s - angle: %3f, d_hypot: %f",sonar_name_.c_str(), axis.c_str() , angle_rad/DEG2RAD, d_hypot);
     
     // get the shortest distance from the hypothenuse.  
-    double adjascent = fabs(cos(yaw + angle_rad + mounting_offset_yaw - heading_offset) * d_hypot);    
+    double adjascent = hyp2ad(d_hypot, angle_rad);
 
     if(axis == "x") {
 
@@ -607,6 +607,12 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
         }
 
     }
+}
+
+double sonar_position::hyp2ad(double hypothenuse, double sonar_head_angle) {
+    double wall_direction = sonar_head_angle - heading_offset - yaw - mounting_offset_yaw;
+
+    return fabs(cos(wall_direction) * hypothenuse);
 }
 
 int sonar_position::store_variance(double variance, std::string variable_name) {

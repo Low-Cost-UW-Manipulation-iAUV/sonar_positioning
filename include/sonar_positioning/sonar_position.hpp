@@ -34,6 +34,7 @@ private:
     void publish_transform(double,double,double,  double,double,double,  std::string,std::string);
     double wrapRad(double);
     double wrapDeg(double);
+    double hyp2ad(double , double );
 
     std::string sonar_name_;
     ros::NodeHandle nh_;
