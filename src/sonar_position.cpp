@@ -31,10 +31,10 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     roll = 0;
     heading_offset = 0;
     last_distance = 0;
-    sonar_configured = false;
     bvm_data_setup = false;
     update_rate = 1;
     relative_to_startup_heading = false;
+    sonar_configured = false;
 
 // Setup the publications and subscription
     do_subs_pubs();
@@ -508,7 +508,11 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 }
 
 void sonar_position::timed_wall_tracking(const ros::TimerEvent & event) {
-    if (sonar_configured == true && (fabs(yaw - old_yaw) >= heading_threshold ) ) { //
+    if(sonar_configured == false) {
+        track_wall();
+        sonar_configured = true;
+    }
+    if (fabs(yaw - old_yaw) >= heading_threshold )  { //
         old_yaw = yaw;
         track_wall();
     }
@@ -526,13 +530,13 @@ int sonar_position::track_wall(void) {
    double left, right;
     // if the beam headings are relative to the initial heading at startup
     if (relative_to_startup_heading == true ) {
-        //      (current heading relative to pool wall) + left - mounting
-        left  = (yaw - heading_offset) + beam_target[0] - mounting_offset_yaw;
-        right  = (yaw - heading_offset) + beam_target[1] - mounting_offset_yaw;
+
+        left  = heading_offset + beam_target[0] - yaw  - mounting_offset_yaw;
+        right  = heading_offset + beam_target[0] - yaw  - mounting_offset_yaw;
 
     } else {
-        left  = yaw + beam_target[0] - mounting_offset_yaw ;
-        right = yaw + beam_target[1] - mounting_offset_yaw ;
+        left  =  beam_target[0] - yaw - mounting_offset_yaw ;
+        right =  beam_target[1] - yaw - mounting_offset_yaw ;
     }
 
 

@@ -50,7 +50,6 @@ private:
     bool variance_x_found, variance_y_found;
     ros::Time imu_timestamp;
     bool sonar_configured;
-
     int calibration_length;
     int consecutive_bin_value_threshold;
     int wall_threshold;
