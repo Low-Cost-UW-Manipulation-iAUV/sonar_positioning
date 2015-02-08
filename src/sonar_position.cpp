@@ -538,7 +538,7 @@ int sonar_position::track_wall(void) {
     if (relative_to_startup_heading == true ) {
 
         left  = heading_offset + beam_target[0] - yaw  - mounting_offset_yaw;
-        right  = heading_offset + beam_target[0] - yaw  - mounting_offset_yaw;
+        right  = heading_offset + beam_target[1] - yaw  - mounting_offset_yaw;
 
     } else {
         left  =  beam_target[0] - yaw - mounting_offset_yaw ;
@@ -616,9 +616,10 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 }
 
 double sonar_position::hyp2ad(double hypothenuse, double sonar_head_angle) {
-    double wall_direction = sonar_head_angle - heading_offset - yaw - mounting_offset_yaw;
+    double wall_direction = wrapRad(sonar_head_angle) - wrapRad(wrapRad(heading_offset) - wrapRad(yaw)) - wrapRad(mounting_offset_yaw);
 
-    return fabs(cos(wall_direction) * hypothenuse);
+    ROS_INFO("sonar_position - %s: %f = %f - (%f -%f) -%f", sonar_name_.c_str(),wall_direction, sonar_head_angle, heading_offset, yaw, mounting_offset_yaw);
+    return fabs(cos(wrapRad(wall_direction)) * hypothenuse);
 }
 
 int sonar_position::store_variance(double variance, std::string variable_name) {
@@ -910,8 +911,8 @@ int main(int argc, char **argv) {
     ros::AsyncSpinner spinner(8);
     spinner.start();
     // create the instance of the class
-    sonar::sonar_position orange_box_0(nh, "sonar_positioning_0");
-    sonar::sonar_position orange_box_1(nh, "sonar_positioning_1");
+    sonar::sonar_position orange_box_0(nh, "sonar_positioning_UWE");
+    sonar::sonar_position orange_box_1(nh, "sonar_positioning_BMT");
 
     // register the 
     ros::spin();
