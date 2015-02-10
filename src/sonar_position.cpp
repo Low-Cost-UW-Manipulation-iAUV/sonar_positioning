@@ -6,6 +6,8 @@
 #include "std_msgs/String.h"
 #include <math.h>
 #include <sstream>
+#include <algorithm> 
+#include <functional> 
 
 #define SURGE 1
 #define SWAY 2
@@ -35,6 +37,7 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
     update_rate = 1;
     relative_to_startup_heading = false;
     sonar_configured = false;
+    squared_rolling_setup = false;
 
 // Setup the publications and subscription
     do_subs_pubs();
@@ -71,6 +74,7 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
         ros::Duration update_freq = ros::Duration(1.0/update_rate);
         timer_update = nh_.createTimer(update_freq, &sonar_position::timed_wall_tracking, this);
     }
+    ROS_INFO("sonar_position - %s: Init finished", sonar_name_.c_str());
 }
 
 sonar_position::~sonar_position() {
@@ -447,7 +451,24 @@ void sonar_position::get_processing_parameters(void) {
         skip_bins = 0.0;
         nh_.setParam(param_address.str(), skip_bins);
     }
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/max_bins";
+    if (!nh_.getParamCached(param_address.str(), max_bins)) {
 
+        ROS_ERROR("Sonar Position - %s: Could not find max_bins, assuming 210.", sonar_name_.c_str());
+        max_bins = 210;
+        nh_.setParam(param_address.str(), max_bins);
+    }
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/processing_params/threshold";
+    if (!nh_.getParamCached(param_address.str(), threshold)) {
+
+        ROS_ERROR("Sonar Position - %s: Could not find threshold, assuming 100000.", sonar_name_.c_str());
+        threshold = 100000;
+        nh_.setParam(param_address.str(), threshold);
+    }
 }
 
 /** send_limits_sonar():
@@ -564,7 +585,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 
     // find the wall and the  distance (hypotenuse) to it
     double d_hypot = 0;
-    if( blurred_valleys_mountains(message, &d_hypot) == EXIT_FAILURE) {
+    if( squared_rolling(message, &d_hypot) == EXIT_FAILURE) {
         return EXIT_FAILURE;
     }    
     ROS_INFO("sonar_position %s -  %s - angle: %3f, d_hypot: %f",sonar_name_.c_str(), axis.c_str() , angle_rad/DEG2RAD, d_hypot);
@@ -706,6 +727,63 @@ double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr&
     }
 }
 
+
+int sonar_position::squared_rolling(const std_msgs::Int32MultiArray::ConstPtr& message, double * d_hypot) {
+    get_processing_parameters();
+
+    int numBins = message->data[1];
+    // the maximum distance to be found in dM
+    double range = message->data[2]/10;
+    
+
+    // ensure we are staying within the message and that neither of these numbers are NaN
+    if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins >= 10) ) {
+        
+        // initialise the empty sum vector and put it into the summer to initialize that, too
+        if(squared_rolling_setup == false) {
+            sum.resize(numBins,0.0);
+            
+            sonar_summer.resize(10);
+            //  fill the buffer
+            for (int x = 0; x<10; x++) {
+                sonar_summer.push_front(sum);                
+            }
+            squared_rolling_setup = true;
+        }
+        std::vector<double> temp;
+        //  get the data from the message
+        temp.assign(message->data.begin()+3, message->data.end());
+
+        // square it
+        std::transform(temp.begin(), temp.end(), temp.begin(), temp.begin(), std::multiplies<double>());
+
+        // remove the last item from our sum
+        std::transform(sum.begin(), sum.end(), sonar_summer.back().begin(), sum.begin(), std::minus<double>());
+
+        // add the new item to the buffer
+        sonar_summer.push_front(temp);
+
+        // add the newest item to the sum
+        std::transform(sum.begin(), sum.end(), sonar_summer.front().begin(), sum.begin(), std::plus<double>());
+
+        // go through array starting after the skipped bins and finishing before the max_bins
+        for(std::vector<double>::iterator itx = sum.begin()+skip_bins; itx != sum.begin()+max_bins; ++itx ) {
+            // if the bin is above the threshold calculate the distance and return
+            if(*itx >= threshold) {
+                *d_hypot = ( (double)(itx - sum.begin()) ) * (range / (double) numBins);
+
+                return EXIT_SUCCESS;
+            }        
+        }
+        ROS_ERROR("sonar_position - %s - %s - BVM Could not find wall", sonar_name_.c_str(), axis.c_str());
+        return EXIT_FAILURE;
+    }
+    ROS_ERROR("sonar_position - %s - %s - data broken", sonar_name_.c_str(), axis.c_str());
+
+    return EXIT_FAILURE;
+}
+
+
 int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr& message, double * d_hypot) {
     get_processing_parameters();
 
@@ -718,6 +796,7 @@ int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::C
 
         if(bvm_data_setup == false) {
             temp.resize(numBins,0.1);
+            
             bvm_data.clear();
             bvm_data.resize(3);
             bvm_data_setup = true;

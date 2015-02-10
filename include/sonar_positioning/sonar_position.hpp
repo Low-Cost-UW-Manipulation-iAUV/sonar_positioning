@@ -86,14 +86,24 @@ private:
     bool bvm_data_setup;
     double valley_limit;
     double mountain_minimum;
+    
     double skip_bins;
+    double max_bins;
     double old_yaw;
     double heading_threshold;
+    double threshold;
+    boost::circular_buffer<std::vector<double> > sonar_summer;
+    std::vector<double> sum;
+    bool squared_rolling_setup;
+
+
     double steps2rad(int );
     int rad2steps(double );
     int deg2steps(double );
     int process_sonar(const std_msgs::Int32MultiArray::ConstPtr&);
     int blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr&, double * );
+    int squared_rolling(const std_msgs::Int32MultiArray::ConstPtr& , double * );
+
     void get_sonar_calibration_data(void);
     void get_transform_parameters(void);
     void get_ENU_beam_targets(void);
