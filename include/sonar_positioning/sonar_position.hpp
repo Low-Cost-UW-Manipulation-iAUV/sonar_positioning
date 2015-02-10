@@ -8,6 +8,7 @@
 #include "sensor_msgs/Imu.h"
 #include "nav_msgs/Odometry.h"
 #include "sonar_positioning/sonar_heading_reference.h"
+#include <tf/transform_datatypes.h>
 
 namespace sonar {
 
@@ -18,7 +19,7 @@ public:
     void do_subs_pubs(void);
 
 private:
-    void sub_callback_imu(const nav_msgs::Odometry::ConstPtr&); //const sensor_msgs::Imu::ConstPtr&);
+    void sub_callback_imu(const sensor_msgs::Imu::ConstPtr&); // const nav_msgs::Odometry::ConstPtr&);
     void sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPtr& );
     ros::ServiceServer sonar_heading_service_give_reference;
     ros::ServiceServer sonar_heading_service_take_imu_as_reference;
@@ -31,7 +32,7 @@ private:
     double getOdomDistance(float, double, double);
     void publish_position(std::string);
     int send_limits_sonar(double, double);
-    void publish_transform(double,double,double,  double,double,double,  std::string,std::string);
+    void publish_transform(double,double,double, tf::Quaternion, std::string,std::string);
     double wrapRad(double);
     double wrapDeg(double);
     double hyp2ad(double , double );
@@ -44,6 +45,7 @@ private:
     ros::Publisher pub_sonar_command;
 
     double yaw, pitch, roll;
+    tf::Quaternion attitude;
     double heading_offset;
     double last_distance;
     double position;

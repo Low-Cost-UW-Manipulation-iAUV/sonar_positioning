@@ -147,8 +147,8 @@ bool sonar_position::imu_as_sonar_reference(sonar_positioning::sonar_heading_ref
 
 
 void sonar_position::do_subs_pubs(void) {
-    //sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
-    sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
+    sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
+    //sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
 
     std::string temp_string;
     std::ostringstream param_address;
@@ -468,12 +468,12 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
 /** sub_callback_imu(): store the current attitude solution of the system.
         This data will (for the time being) be from the sensor fusion system.
 */
-void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& message) {//const sensor_msgs::Imu::ConstPtr& message ) {
+void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message ) { //const nav_msgs::Odometry::ConstPtr& message) {
 
-    tf::Quaternion q(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
-//    tf::Quaternion q(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
+//    attitude = tf::Quaternion(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
+    attitude = tf::Quaternion(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
 
-    tf::Matrix3x3 m(q);
+    tf::Matrix3x3 m(attitude);
     double temp_r, temp_p, temp_y;
     m.getRPY(temp_r, temp_p, temp_y);
     // unwrap anything --> just to be sure
@@ -491,11 +491,12 @@ void sonar_position::sub_callback_imu(const nav_msgs::Odometry::ConstPtr& messag
 
     imu_timestamp = message->header.stamp;
 
+    tf::Quaternion quatila_the_modern_hun;
+    quatila_the_modern_hun = attitude;
     // Publish the odom->SVS transform as good brothers do.
-    publish_transform(svs_transform_x, svs_transform_y, svs_transform_z,  yaw,pitch,roll, parent_frame_id,svs_child_frame_id);
-
+    publish_transform(svs_transform_x, svs_transform_y, svs_transform_z, quatila_the_modern_hun, parent_frame_id,svs_child_frame_id);
     // Publish the sonars transform
-    publish_transform(transform_x,transform_y,transform_z, yaw,pitch,roll, parent_frame_id, child_frame_id);
+    publish_transform(transform_x,transform_y,transform_z, quatila_the_modern_hun, parent_frame_id, child_frame_id);
 
 }
 
@@ -616,7 +617,14 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 }
 
 double sonar_position::hyp2ad(double hypothenuse, double sonar_head_angle) {
-    double wall_direction = wrapRad(sonar_head_angle) - wrapRad(wrapRad(heading_offset) - wrapRad(yaw)) - wrapRad(mounting_offset_yaw);
+    double xy_angle;
+    if (axis == "y") {
+        xy_angle = 1.5707963268;
+    } else {
+        xy_angle = 0;
+    }
+
+    double wall_direction = wrapRad(sonar_head_angle) - wrapRad(wrapRad(heading_offset) - wrapRad(yaw) - xy_angle) - wrapRad(mounting_offset_yaw);
 
     ROS_INFO("sonar_position - %s: %f = %f - (%f -%f) -%f", sonar_name_.c_str(),wall_direction, sonar_head_angle, heading_offset, yaw, mounting_offset_yaw);
     return fabs(cos(wrapRad(wall_direction)) * hypothenuse);
@@ -799,12 +807,13 @@ void sonar_position::publish_position(std::string axis) {
 /** publish_transform: rotates the sonar_beam frame to the sonar_base frame
         publishes the transformation that will rotate the x,y position in the local sonar frame to the sonar base frame.
 */
-void sonar_position::publish_transform(double x, double y, double z, double yaw, double pitch, double roll, std::string parent_frame_id, std::string child_frame_id) {
+void sonar_position::publish_transform(double x, double y, double z, tf::Quaternion attila_the_hun_king, std::string parent_frame_id, std::string child_frame_id) {
     tf::Transform transform;
     transform.setOrigin(tf::Vector3(x, y, z));
-    tf::Quaternion q;
-    q.setRPY(roll, pitch, yaw);
-    transform.setRotation(q);
+    /*    tf::Quaternion q;
+    q.createQuaternionFromRPY(roll_, pitch_, yaw_);
+    */
+    transform.setRotation(attila_the_hun_king);
     transformer.sendTransform(tf::StampedTransform(transform, ros::Time::now(), parent_frame_id, child_frame_id) );
 }
 
