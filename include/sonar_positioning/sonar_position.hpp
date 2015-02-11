@@ -43,6 +43,7 @@ private:
     ros::Subscriber sub_sonar;
     ros::Publisher pub_position;
     ros::ServiceClient sonar_command_service_client;
+    std::string sonar_commands_server;
     double yaw, pitch, roll;
     tf::Quaternion attitude;
     double heading_offset;

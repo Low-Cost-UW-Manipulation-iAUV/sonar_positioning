@@ -189,14 +189,15 @@ void sonar_position::do_subs_pubs(void) {
     temp_string.clear();
     param_address.clear();
     param_address.str("");
+    sonar_commands_server.clear();
     param_address << "/sonar/" << sonar_name_ << "/sonar_commands_server" ;
 
-    if (!nh_.getParam(param_address.str(), temp_string)) {
+    if (!nh_.getParam(param_address.str(), sonar_commands_server)) {
 
         ROS_ERROR("Sonar Position: cant find which ServiceServer to send commands to,error \n");
         ros::shutdown();
     } 
-    sonar_command_service_client = nh_.serviceClient<micron_driver::sonarRequest>(temp_string);
+    sonar_command_service_client = nh_.serviceClient<micron_driver::sonarRequest>(sonar_commands_server);
     
 }
 
@@ -482,6 +483,10 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) << ",rightlim=" << rad2steps( wrapRad(right_limit) )<<"";
     sonar_command.request.request = temp.str();
     ROS_INFO("sonar_positioning - %s -left_limit: %f, right_limit: %f", axis.c_str(), wrapRad(left_limit), wrapRad(right_limit) );
+    
+    ROS_INFO("sonar_position - %s: waiting for sonarRequest Service to come online", sonar_name_.c_str());
+    ros::service::waitForService(sonar_commands_server, -1);
+
     if(sonar_command_service_client.call(sonar_command)) {
         return EXIT_SUCCESS;
     } else {
