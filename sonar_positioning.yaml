@@ -12,12 +12,11 @@ sonar:                                              # The config file for the so
         processing_params:
             track_wall:
                 beam_target: [92, 88]                # Which heading (yaw) range do you want the sonar to stay in? [left_limit, right_limit]
-
                 relative_to_startup_heading: true   # Is the beam_target relative to the initial IMU yaw?
                 axis: y
                 update_rate: 1                      # How often do you want to update the beam_target range?
                 heading_threshold: 10               # And how much should it at least have moved in that time?
-            skip_bins: 21                           # Which distance from the sonar to you want to ignore? bins = range/number_of_bins - 0.4m.
+            skip_bins: 24                          # Which distance from the sonar to you want to ignore? bins = range/number_of_bins - 0.4m.
             max_bins: 106                           # How fare can this maximally be? - 3m
             consecutive_bin_value_threshold: 100    # NOT USED ATM, part of sonar2Distance()
             wall_threshold: 3                       # NOT USED ATM, part of sonar2Distance()
@@ -40,13 +39,13 @@ sonar:                                              # The config file for the so
                 axis: x
                 update_rate: 1   
                 heading_threshold: 10
-            skip_bins: 21  #~ 0.7m
+            skip_bins: 24  #~ 0.7m
             max_bins: 210                           # How fare can this maximally be? - 6m            
             consecutive_bin_value_threshold: 100
             wall_threshold: 3
             mountain_minimum: 80
             valley_limit: 10
-            threshold: 160000            
+            threshold: 110000            
     svs:
         position_base_link_frame: [-0.575, -0.2765, 0.0328]
         child_frame_id: SVS
