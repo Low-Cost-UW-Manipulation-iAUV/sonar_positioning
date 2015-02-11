@@ -8,6 +8,7 @@
 #include <sstream>
 #include <algorithm> 
 #include <functional> 
+#include "micron_driver/sonarRequest.h"
 
 #define SURGE 1
 #define SWAY 2
@@ -188,14 +189,14 @@ void sonar_position::do_subs_pubs(void) {
     temp_string.clear();
     param_address.clear();
     param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/publish_commands_to" ;
+    param_address << "/sonar/" << sonar_name_ << "/sonar_commands_server" ;
 
     if (!nh_.getParam(param_address.str(), temp_string)) {
 
-        ROS_ERROR("Sonar Position: cant find which rostopic to publish commands to,error \n");
+        ROS_ERROR("Sonar Position: cant find which ServiceServer to send commands to,error \n");
         ros::shutdown();
     } 
-    pub_sonar_command = nh_.advertise<std_msgs::String>(temp_string, 5);
+    sonar_command_service_client = nh_.serviceClient<micron_driver::sonarRequest>(temp_string);
     
 }
 
@@ -475,14 +476,17 @@ void sonar_position::get_processing_parameters(void) {
 */
 int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     // send the sonar the command to only sweep our required area.
-    std_msgs::String sonar_command;    
+    micron_driver::sonarRequest sonar_command;    
 
     std::ostringstream temp;
     temp << "leftlim="<< rad2steps( wrapRad(left_limit) ) << ",rightlim=" << rad2steps( wrapRad(right_limit) )<<"";
-    sonar_command.data = temp.str();
+    sonar_command.request.request = temp.str();
     ROS_INFO("sonar_positioning - %s -left_limit: %f, right_limit: %f", axis.c_str(), wrapRad(left_limit), wrapRad(right_limit) );
-    pub_sonar_command.publish(sonar_command);
-    return EXIT_SUCCESS;
+    if(sonar_command_service_client.call(sonar_command)) {
+        return EXIT_SUCCESS;
+    } else {
+        return EXIT_FAILURE;
+    }
 }
 
 

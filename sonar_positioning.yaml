@@ -2,7 +2,7 @@ sonar:                                              # The config file for the so
     number_of_sonars: 2
     sonar_positioning_UWE:
         listen_to: /sonarDataUWE
-        publish_commands_to: /sonarRequestUWE
+        sonar_commands_server: /sonarRequestUWE
         publish_data_to: /sonar/positionUWE
         parent_frame: odom
         child_frame: SONAR_UWESUB
@@ -26,7 +26,7 @@ sonar:                                              # The config file for the so
             threshold: 100000
     sonar_positioning_BMT:
         listen_to: /sonarDataBMT
-        publish_commands_to: /sonarRequestBMT
+        sonar_commands_server: /sonarRequestBMT
         publish_data_to: /sonar/positionBMT
         parent_frame: odom
         child_frame: SONAR_BMT
