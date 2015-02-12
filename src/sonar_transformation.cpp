@@ -24,15 +24,16 @@ void sonar_transformer::get_odom_pool_offset(void) {
 
     std::vector<double> temp;
     if (!nh_.getParam("/sonar/odom_pool_rotation/quat", temp)) {
-        ROS_ERROR("Sonar Transform: Could not find pool_yaw, exiting");
+        ROS_ERROR("Sonar Transform: Could not find static_odom_pool_yaw, exiting");
         ros::shutdown();
     }
     tf::Quaternion q(temp.at(0), temp.at(1), temp.at(2), temp.at(3));
     tf::Matrix3x3 m(q);
     double rubbish;
-    m.getRPY(rubbish, rubbish, pool_yaw);
-    nh_.setParam("/sonar/odom_pool_rotation/deg", pool_yaw * 180/M_PI);
+    m.getRPY(rubbish, rubbish, static_odom_pool_yaw);
+    nh_.setParam("/sonar/odom_pool_rotation/deg", static_odom_pool_yaw * 180/M_PI);
 }
+
 
 /** get_sonar_offsets(): get the sonar offset from the parameter server
 */
@@ -52,7 +53,15 @@ void sonar_transformer::get_sonar_offset(void) {
         ros::shutdown();
     }
     uwe_Sx = temp.at(0);
-    uwe_Sy = temp.at(1);      
+    uwe_Sy = temp.at(1);
+
+    temp.clear();
+    if (!nh_.getParam("/sonar/svs/position_base_link_frame", temp)) {
+        ROS_ERROR("Sonar Transform: Could not find SVS position, exiting");
+        ros::shutdown();
+    }
+    svs_Sx = temp.at(0);
+    svs_Sy = temp.at(1);
 }
 
 void sonar_transformer::get_broadcast_rate(void) {
@@ -106,6 +115,19 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
 
     // broadcast it
     br_pool_sonar.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "pool", "SONAR_UWE"));
+
+   // And finally for the SVS aka dz
+    double svs_dz;    
+    find_dx(pool_bl_pitch, svs_Sx, svs_Sy, svs_dz);
+
+    // fill and broadcast the transform
+    q.setRPY(0.0,0.0,0.0);
+    transform.setRotation(q);
+    transform.setOrigin( tf::Vector3(0.0,0.0,svs_dz) );
+
+    // broadcast it
+    br_pool_sonar.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "pool", "SVS"));
+
 }
 
 /** bc_odom_pool(): will acctually do the work of broadcasting the transforms
@@ -115,7 +137,7 @@ void sonar_transformer::bc_odom_pool(const ros::TimerEvent& event) {
     transform.setOrigin( tf::Vector3(0.0,0.0,0.0) );
 
     tf::Quaternion q;
-    q.setRPY(0.0,0.0,pool_yaw);
+    q.setRPY(0.0,0.0,static_odom_pool_yaw);
 
     transform.setRotation(q);
     br_odom_pool.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "odom", "pool"));

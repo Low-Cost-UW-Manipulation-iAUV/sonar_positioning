@@ -28,15 +28,13 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 
 
 // Prep variables    
-    yaw = 0;
+    pool_bl_yaw = 0;
     old_yaw = 0;
-    pitch = 0;
-    roll = 0;
-    heading_offset = 0;
+    pool_bl_pitch = 0;
+    pool_bl_roll = 0;
     last_distance = 0;
     bvm_data_setup = false;
     update_rate = 1;
-    relative_to_startup_heading = false;
     sonar_configured = false;
     squared_rolling_setup = false;
 
@@ -46,28 +44,20 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 // Prepare the sonar calibration
     get_sonar_calibration_data();
 
-// Get transform frame_ids from parameter server
-    get_transform_parameters();
+// get the transform search update_rate
+    get_transform_search_update_rate();
 
-// Advertise the two services
-    std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/give_sonar_reference";
-
-    sonar_heading_service_give_reference = nh_.advertiseService(param_address.str(), &sonar_position::give_sonar_reference, this);
-    
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/imu_as_sonar_reference";
-    sonar_heading_service_take_imu_as_reference = nh_.advertiseService(param_address.str(), &sonar_position::imu_as_sonar_reference, this);
+// Get frame_id from parameter server
+    get_frame_id();
 
 // Get the (initial) target headings for the sonar
     get_ENU_beam_targets();
 
-
 // Prep the processing parameters
     get_processing_parameters();
+
+// Find the yaw angle in the pool frame
+    pool_base_link_timer = nh_.createTimer(transform_search_update_rate, &sonar_position::tf_pool_sonar, this);
 
 
 // Track the wall at the specified 
@@ -82,78 +72,8 @@ sonar_position::~sonar_position() {
 
 }
 
-/** give_sonar_reference(): ROS service that expects a sonar yaw reference in ENU and stores it on the parameter server in 
-                            /sonar/sonar_positioning_n/processing_params/track_wall/beam_target
-*/
-bool sonar_position::give_sonar_reference(sonar_positioning::sonar_heading_reference::Request &req, sonar_positioning::sonar_heading_reference::Response &res) {
-    std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
-    std::vector<double> heading_request_temp;
-    heading_request_temp.clear();
-    heading_request_temp.push_back( req.sonar_heading_reference.at(0) );
-    heading_request_temp.push_back( req.sonar_heading_reference.at(1) );
-
-    nh_.setParam(param_address.str(), heading_request_temp);
-    
-    std::vector<double> temp;
-    temp.clear();
-    nh_.getParam(param_address.str(), temp);
-    if (temp != heading_request_temp) {
-        ROS_ERROR("Sonar Position: Could not set sonar_reference assuming\n");
-        res.ok = false;
-        return EXIT_FAILURE;
-    }
-    // set the relative_to_startup_heading boolean
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/relative_to_startup_heading";
-    nh_.setParam(param_address.str(), false);
-
-    res.ok = true;
-    return EXIT_SUCCESS;
-}
-
-/** give_sonar_reference(): ROS service that expects a sonar yaw reference RELATIVE TO THE CURRENT HEADING and stores it on the parameter server in 
-                            /sonar/sonar_positioning_n/processing_params/track_wall/beam_target
-*/
-bool sonar_position::imu_as_sonar_reference(sonar_positioning::sonar_heading_reference::Request &req, sonar_positioning::sonar_heading_reference::Response &res) {
-
-    std::vector<double> temp;
-    temp.clear();
-    temp.push_back(req.sonar_heading_reference.at(0) + yaw);
-    temp.push_back(req.sonar_heading_reference.at(1) + yaw);
-
-    std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
-    nh_.setParam(param_address.str(), temp);
-
-    std::vector<double> tempered;
-    tempered.clear();
-    nh_.getParam(param_address.str(), tempered);
-    if (temp != tempered) {
-        ROS_ERROR("Sonar Position: Could not set sonar_reference\n");
-        res.ok = false;
-        return EXIT_FAILURE;
-    }
-
-    // set the relative_to_startup_heading boolean
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/relative_to_startup_heading";
-    nh_.setParam(param_address.str(), true);
-
-    res.ok = true;
-    return EXIT_SUCCESS;
-}
-
 
 void sonar_position::do_subs_pubs(void) {
-    sub_imu = nh_.subscribe<sensor_msgs::Imu>("/imu/data", 1, &sonar_position::sub_callback_imu, this );
-    //sub_imu = nh_.subscribe<nav_msgs::Odometry>("/odometry/filtered", 1, &sonar_position::sub_callback_imu, this );
 
     std::string temp_string;
     std::ostringstream param_address;
@@ -248,22 +168,14 @@ void sonar_position::get_sonar_calibration_data(void) {
     } else { // if it is available skip the determination
         variance_y_found = true;
     }
+
 }
 
-/** get_transform_parameters(): 
+/** get_frame_id(): 
 */
-void sonar_position::get_transform_parameters(void) {
+void sonar_position::get_frame_id(void) {
+
     std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/parent_frame";  
-    if (!nh_.getParam(param_address.str(), parent_frame_id)) {
-
-        ROS_ERROR("Sonar Position - %s: couldn't find parent_frame_id, assuming odom", sonar_name_.c_str());
-        parent_frame_id = "odom";
-        nh_.setParam(param_address.str(), parent_frame_id);
-    }
-
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/child_frame";  
@@ -271,66 +183,18 @@ void sonar_position::get_transform_parameters(void) {
 
         ROS_ERROR("Sonar Position - %s: couldn't find child_frame_id, exiting", sonar_name_.c_str());
         ros::shutdown();
-    }
-
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/position_base_link_frame";
-    std::vector<double> temp;
-    
-    temp.clear();    
-    if (!nh_.getParam(param_address.str(), temp)) {
-
-        ROS_ERROR("Sonar Position - %s : couldn't find position_base_link_frame, assuming 0", sonar_name_.c_str() );
-        temp[0] = 0.0;
-        temp[1] = 0.0;
-        temp[2] = 0.0;
-        nh_.setParam(param_address.str(), temp);
-    }
-    transform_x = temp[0];
-    transform_y = temp[1];
-    transform_z = temp[2];
-
-  
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/orientation_base_link_frame";
-    
-    temp.clear();    
-    if (!nh_.getParam(param_address.str(), temp)) {
-
-        ROS_ERROR("Sonar Position - %s: couldn't find orientation_base_link_frame, assuming 0", sonar_name_.c_str());
-        temp[0] = 0.0;
-        temp[1] = 0.0;
-        temp[2] = 0.0;
-        nh_.setParam(param_address.str(), temp);
-    }
-    mounting_offset_yaw = temp[0];
-    mounting_offset_pitch = temp[1];
-    mounting_offset_roll = temp[2];
-
-
-    temp.clear();
-    if (!nh_.getParam("/sonar/svs/position_base_link_frame", temp)) {
-
-        ROS_ERROR("Sonar Position - %s: couldn't find SVS position_base_link_frame, assuming 0", sonar_name_.c_str());
-        temp[0] = 0.0;
-        temp[1] = 0.0;
-        temp[2] = 0.0;
-        nh_.setParam(param_address.str(), temp);
-    }
-    svs_transform_x = temp[0];
-    svs_transform_y = temp[1];
-    svs_transform_z = temp[2];   
-
-    if (!nh_.getParam("/sonar/svs/child_frame_id", svs_child_frame_id)) {
-
-        ROS_ERROR("Sonar Position - %s: couldn't find SVS child_frame_id_id, assuming SVS", sonar_name_.c_str());
-        svs_child_frame_id = "SVS";
-        nh_.setParam(param_address.str(), svs_child_frame_id);
-    }
+    }  
 }
+/** transform_search_update_rate(): 
+*/
+void sonar_position::get_transform_search_update_rate(void) {
 
+    if (!nh_.getParam("/sonar/transform_search_update_rate", transform_search_update_rate)) {
+
+        ROS_ERROR("Sonar Position - %s: couldn't find transform_search_update_rate, exiting", sonar_name_.c_str());
+        ros::shutdown();
+    }  
+}
 
 /** get_ENU_beam_targets(): Get the initial heading (ENU) we want the sonar to look at.
         THis might be in reference to 
@@ -366,20 +230,6 @@ void sonar_position::get_ENU_beam_targets(void) {
     beam_target[1] = beam_target[1] * M_PI / 180;
     ROS_INFO("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
   
-
-    // is the beam_target relative to the initial heading? Then prep to set this up upon first IMU callback
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/relative_to_startup_heading";
-    if (!nh_.getParamCached(param_address.str(), relative_to_startup_heading)) {
-
-        ROS_ERROR("Sonar Position - %s: Could not find if relative_to_startup_heading, assuming TRUE", sonar_name_.c_str());
-        
-        relative_to_startup_heading = true;
-        nh_.setParam(param_address.str(), relative_to_startup_heading);
-    } 
-        relative_to_startup_heading_is_set = false;
-
 
     param_address.clear();
     param_address.str("");
@@ -496,39 +346,24 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
 }
 
 
-/** sub_callback_imu(): store the current attitude solution of the system.
-        This data will (for the time being) be from the sensor fusion system.
+/** tf_pool_sonar(): gets the current heading of the sub in reference to the pool
 */
-void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message ) { //const nav_msgs::Odometry::ConstPtr& message) {
-
-//    attitude = tf::Quaternion(message->pose.pose.orientation.x, message->pose.pose.orientation.y, message->pose.pose.orientation.z, message->pose.pose.orientation.w);
-    attitude = tf::Quaternion(message->orientation.x, message->orientation.y, message->orientation.z, message->orientation.w);
-
-    tf::Matrix3x3 m(attitude);
-    double temp_r, temp_p, temp_y;
-    m.getRPY(temp_r, temp_p, temp_y);
-    // unwrap anything --> just to be sure
-    roll = wrapRad(temp_r);
-    pitch = wrapRad(temp_p);
-    yaw = wrapRad(temp_y);
-
-    /// set the store the offset to north (the error to north...)
-    if(relative_to_startup_heading == true && relative_to_startup_heading_is_set == false) {
-
-        heading_offset = yaw;
-
-        relative_to_startup_heading_is_set = true;
+void sonar_position::tf_pool_sonar(const ros::TimerEvent& event ) {
+    tf::StampedTransform found_transform;
+    try{
+      listener.lookupTransform("/pool", "/base_link", ros::Time(0), found_transform);
+    }
+    catch (tf::TransformException ex){
+      ROS_ERROR("%s",ex.what());
+      ros::Duration(1.0).sleep();
     }
 
-    imu_timestamp = message->header.stamp;
-/*  The transform is now being published in the sonar_transformer
-    tf::Quaternion quatila_the_modern_hun;
-    quatila_the_modern_hun = attitude;
-    // Publish the odom->SVS transform as good brothers do.
-    publish_transform(svs_transform_x, svs_transform_y, svs_transform_z, quatila_the_modern_hun, parent_frame_id,svs_child_frame_id);
-    // Publish the sonars transform
-    publish_transform(transform_x,transform_y,transform_z, quatila_the_modern_hun, parent_frame_id, child_frame_id);
-*/
+    // get the rotation from pool to base_link
+    tf::Quaternion quat = found_transform.getRotation();
+    tf::Matrix3x3 m(quat);
+    m.getRPY(pool_bl_roll, pool_bl_pitch, pool_bl_yaw);
+    ROS_INFO("sonar_position: yaw of pool->base_link : %f", pool_bl_yaw);
+
 }
 
 
@@ -545,37 +380,34 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
     }
 }
 
+/** timed_wall_tracking(): Decides if we want to update the sonar head direction
+                            Runs every x seconds and updates the direction if the 
+                            heading has changed more than heading_threshold
+*/
 void sonar_position::timed_wall_tracking(const ros::TimerEvent & event) {
     if(sonar_configured == false) {
         track_wall();
         sonar_configured = true;
     }
-    if (fabs(yaw - old_yaw) >= heading_threshold )  { //
-        old_yaw = yaw;
+    if (fabs(pool_bl_yaw - old_yaw) >= heading_threshold )  { //
+        old_yaw = pool_bl_yaw;
         track_wall();
     }
 
 }
 
 
-/** track_wall(): calculate the correct angle to face the wall and let the sonar face that way
-        This gets called on the timer basis
+/** track_wall(): Find the angle between beam_target and yaw (both in pool frame) and set the sonar head to it
 */
 int sonar_position::track_wall(void) {
 
     // Update the beam target
     get_ENU_beam_targets();
    double left, right;
-    // if the beam headings are relative to the initial heading at startup
-    if (relative_to_startup_heading == true ) {
+   
 
-        left  = heading_offset + beam_target[0] - yaw  - mounting_offset_yaw;
-        right  = heading_offset + beam_target[1] - yaw  - mounting_offset_yaw;
-
-    } else {
-        left  =  beam_target[0] - yaw - mounting_offset_yaw ;
-        right =  beam_target[1] - yaw - mounting_offset_yaw ;
-    }
+    left  =  wrapRad(beam_target[0] - pool_bl_yaw);
+    right =  wrapRad(beam_target[1] - pool_bl_yaw);
 
 
     if (send_limits_sonar(left, right) == EXIT_SUCCESS) {
@@ -653,15 +485,10 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
 double sonar_position::hyp2ad(double hypothenuse, double sonar_head_angle) {
     double xy_angle;
     if (axis == "y") {
-        xy_angle = 1.5707963268;
+        return sin(wrapRad(sonar_head_angle) + wrapRad(pool_bl_yaw) ) * hypothenuse;
     } else {
-        xy_angle = 0;
+        return cos(wrapRad(sonar_head_angle) + wrapRad(pool_bl_yaw) ) * hypothenuse;
     }
-
-    double wall_direction = wrapRad(sonar_head_angle) - wrapRad(wrapRad(heading_offset) - wrapRad(yaw) - xy_angle) - wrapRad(mounting_offset_yaw);
-
-    ROS_INFO("sonar_position - %s: %f = %f - (%f -%f) -%f", sonar_name_.c_str(),wall_direction, sonar_head_angle, heading_offset, yaw, mounting_offset_yaw);
-    return cos(wrapRad(wall_direction)) * hypothenuse;
 }
 
 int sonar_position::store_variance(double variance, std::string variable_name) {
@@ -859,18 +686,6 @@ int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::C
     return EXIT_FAILURE;
 }
 
-/** getOdomDistance(): find the distance to the assumed vertical wall 
-            in the odom frame given the distance to the same wall in body frame.
-*/
-double sonar_position::getOdomDistance(float body_position, double angle_a, double angle_b) {
-
-    // rotate the body frame sonar measurement along the x axis into the odom frame
-    double undo_pitch = fabs(cos(angle_a)) * body_position ;
-    double odom_position = fabs(cos(angle_b)) * undo_pitch;
-
-    return odom_position;
-}
-
 /** publish_position(): DOes what is says
 */
 void sonar_position::publish_position(std::string axis) {
@@ -894,19 +709,6 @@ void sonar_position::publish_position(std::string axis) {
 
 
     pub_position.publish(sonar_position);
-}
-
-/** publish_transform: rotates the sonar_beam frame to the sonar_base frame
-        publishes the transformation that will rotate the x,y position in the local sonar frame to the sonar base frame.
-*/
-void sonar_position::publish_transform(double x, double y, double z, tf::Quaternion attila_the_hun_king, std::string parent_frame_id, std::string child_frame_id) {
-    tf::Transform transform;
-    transform.setOrigin(tf::Vector3(x, y, z));
-    /*    tf::Quaternion q;
-    q.createQuaternionFromRPY(roll_, pitch_, yaw_);
-    */
-    transform.setRotation(attila_the_hun_king);
-    transformer.sendTransform(tf::StampedTransform(transform, ros::Time::now(), parent_frame_id, child_frame_id) );
 }
 
 

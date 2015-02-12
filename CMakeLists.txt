@@ -6,20 +6,12 @@ find_package(catkin REQUIRED COMPONENTS
 	roscpp
 	std_msgs
 	geometry_msgs
-	sensor_msgs
 	nav_msgs
 	tf
-	message_generation
 	)
 
 find_package(Boost REQUIRED COMPONENTS system)
 
-add_service_files(
-	FILES
-	sonar_heading_reference.srv
-	)
-generate_messages(
-	)
 
 ## Declare a catkin package
 catkin_package(
@@ -27,7 +19,6 @@ catkin_package(
 	roscpp
 	std_msgs
 	geometry_msgs
-	sensor_msgs
 	nav_msgs
 	tf
 	INCLUDE_DIRS

@@ -37,9 +37,9 @@ private:
 
     double broadcast_rate;
     double pool_bl_roll, pool_bl_pitch, pool_bl_yaw;
-    double pool_yaw;
+    double static_odom_pool_yaw;
     // sonar mounting offsets in base_link
-    double bmt_Sx, bmt_Sy, uwe_Sx, uwe_Sy;
+    double bmt_Sx, bmt_Sy, uwe_Sx, uwe_Sy, svs_Sx, svs_Sy;
 };
 
 } // end of namespace
