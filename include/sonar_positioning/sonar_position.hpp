@@ -119,5 +119,5 @@ private:
     double std2(const std::vector<double>, const double mean);    
 };
 
-}
+} // end of namespace
 #endif

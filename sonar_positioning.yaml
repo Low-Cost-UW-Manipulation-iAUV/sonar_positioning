@@ -1,4 +1,8 @@
-sonar:                                              # The config file for the sonar_positioning node
+sonar:                                                          # The config file for the sonar_positioning node
+    odom_pool_rotation:  # rotation in quaternion from odom->pool 
+        quat: [0.0114342635497, -0.02130962722, 0.956779122353, 0.289808094501]
+        deg: 400    # 400- unknown
+    broadcast_rate: 50
     number_of_sonars: 2
     sonar_positioning_UWE:
         listen_to: /sonarDataUWE

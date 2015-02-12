@@ -393,12 +393,13 @@ void sonar_position::get_ENU_beam_targets(void) {
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/heading_threshold";
-    if (!nh_.getParamCached(param_address.str(), heading_threshold)) {
+    double temp;
+    if (!nh_.getParamCached(param_address.str(), temp)) {
         ROS_ERROR("Sonar Position - %s: Could not find heading_threshold, assuming 10°", sonar_name_.c_str());
         heading_threshold = 10;
-        nh_.setParam(param_address.str(), heading_threshold);
+        nh_.setParam(param_address.str(), temp);
     }
-            heading_threshold = heading_threshold * M_PI/180;
+            heading_threshold = temp * M_PI/180;
 }
 
 
@@ -520,14 +521,14 @@ void sonar_position::sub_callback_imu(const sensor_msgs::Imu::ConstPtr& message 
     }
 
     imu_timestamp = message->header.stamp;
-
+/*  The transform is now being published in the sonar_transformer
     tf::Quaternion quatila_the_modern_hun;
     quatila_the_modern_hun = attitude;
     // Publish the odom->SVS transform as good brothers do.
     publish_transform(svs_transform_x, svs_transform_y, svs_transform_z, quatila_the_modern_hun, parent_frame_id,svs_child_frame_id);
     // Publish the sonars transform
     publish_transform(transform_x,transform_y,transform_z, quatila_the_modern_hun, parent_frame_id, child_frame_id);
-
+*/
 }
 
 
@@ -599,7 +600,10 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     }    
     ROS_INFO("sonar_position %s -  %s - angle: %3f, d_hypot: %f",sonar_name_.c_str(), axis.c_str() , angle_rad/DEG2RAD, d_hypot);
     
-    // get the shortest distance from the hypothenuse.  
+    // Due to the pool frame attachment our position can only be negative.
+    d_hypot = -1 * d_hypot; 
+
+    // get the shortest distance from the hypothenuse.     
     double adjascent = hyp2ad(d_hypot, angle_rad);
 
     if(axis == "x") {
@@ -657,7 +661,7 @@ double sonar_position::hyp2ad(double hypothenuse, double sonar_head_angle) {
     double wall_direction = wrapRad(sonar_head_angle) - wrapRad(wrapRad(heading_offset) - wrapRad(yaw) - xy_angle) - wrapRad(mounting_offset_yaw);
 
     ROS_INFO("sonar_position - %s: %f = %f - (%f -%f) -%f", sonar_name_.c_str(),wall_direction, sonar_head_angle, heading_offset, yaw, mounting_offset_yaw);
-    return fabs(cos(wrapRad(wall_direction)) * hypothenuse);
+    return cos(wrapRad(wall_direction)) * hypothenuse;
 }
 
 int sonar_position::store_variance(double variance, std::string variable_name) {

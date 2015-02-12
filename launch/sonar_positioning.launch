@@ -1,4 +1,6 @@
 <launch>
     <rosparam command="load" file="$(find sonar_positioning)/sonar_positioning.yaml" />
     <node name="sonar_positioning" pkg="sonar_positioning" type="sonar_position" respawn="true" output="screen" />
+    <node name="sonar_transformation" pkg="sonar_positioning" type="sonar_transformer" respawn="true" output="screen" />
+
 </launch>
