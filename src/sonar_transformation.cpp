@@ -45,13 +45,9 @@ void sonar_transformer::get_sonar_mount_base_link_yaw(void) {
         ROS_ERROR("Sonar Transform: Could not find static_sonarBMT_mount_base_link_yaw, exiting");
         ros::shutdown();
     }
-    tf::Quaternion q(temp_vector.at(0), temp_vector.at(1), temp_vector.at(2), temp_vector.at(3));
-    tf::Matrix3x3 m(q);
-    double rubbish;
-    double temp;
-    m.getRPY(rubbish, rubbish, temp);
+
     // internally everything is running in radians
-    static_sonarBMT_mount_base_link_yaw = temp * M_PI/180;
+    static_sonarBMT_mount_base_link_yaw = temp_vector.at(2) * M_PI/180;
 
 
     temp_vector.clear();
@@ -59,11 +55,8 @@ void sonar_transformer::get_sonar_mount_base_link_yaw(void) {
         ROS_ERROR("Sonar Transform: Could not find static_sonarUWE_mount_base_link_yaw, exiting");
         ros::shutdown();
     }
-    q =  tf::Quaternion(temp_vector.at(0), temp_vector.at(1), temp_vector.at(2), temp_vector.at(3));
-    m = tf::Matrix3x3(q);
-    m.getRPY(rubbish, rubbish, temp);
     // internally everything is running in radians
-    static_sonarUWE_mount_base_link_yaw = temp * M_PI/180;    
+    static_sonarUWE_mount_base_link_yaw = temp_vector.at(2) * M_PI/180;    
 }
 
 /** get_sonar_offsets(): get the sonar offset from the parameter server

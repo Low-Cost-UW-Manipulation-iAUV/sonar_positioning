@@ -223,6 +223,7 @@ void sonar_position::get_ENU_beam_targets(void) {
         ros::shutdown();
     } 
     // beam_width targets
+    beam_target.resize(2,0);
     beam_target.at(0) = temp_vector.at(0) * M_PI / 180;
     beam_target.at(1) = temp_vector.at(1) * M_PI / 180;
     // direction of the wall
