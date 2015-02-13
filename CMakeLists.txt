@@ -34,4 +34,8 @@ target_link_libraries(sonar_transformer ${catkin_LIBRARIES})
 
 add_executable(sonar_position src/sonar_position.cpp)
 target_link_libraries(sonar_position ${catkin_LIBRARIES})
+
+add_executable(transform_helper src/transform_helper.cpp)
+target_link_libraries(transform_helper ${catkin_LIBRARIES})
+
 add_dependencies(sonar_position std_msgs_generate_messages_cpp geometry_msgs_generate_messages_cpp sensor_msgs_generate_messages_cpp nav_msgs_generate_messages_cpp micron_driver_generate_messages_cpp)

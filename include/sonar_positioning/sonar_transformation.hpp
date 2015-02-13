@@ -45,7 +45,7 @@ private:
     double static_odom_pool_yaw;
     double static_sonarBMT_mount_base_link_yaw, static_sonarUWE_mount_base_link_yaw;
     // sonar mounting offsets in base_link
-    double bmt_Sx, bmt_Sy, uwe_Sx, uwe_Sy, svs_Sx, svs_Sy;
+    double bmt_Sx, bmt_Sy, uwe_Sx, uwe_Sy, svs_Sx, svs_Sz;
 };
 
 } // end of namespace

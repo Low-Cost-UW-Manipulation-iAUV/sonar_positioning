@@ -10,7 +10,7 @@ sonar:                                                          # The config fil
         sonar_commands_server: /sonarRequestUWE
         publish_data_to: /sonar/positionUWE
         parent_frame: odom
-        child_frame: SONAR_UWESUB
+        child_frame: SONAR_UWE
         position_base_link_frame: [-0.595, 0.0, -0.2075]       # What is the offset from the base_link frame?
         orientation_base_link_frame: [0.0, 0.0, 180 ]    # RPY What angle are the sonars mounted at relative to base_link_frame? 
         calibration_length: 200                      # How many samples do you want to calibrate the sonar for? Dont move the sonar in that time. The sonar should be facing a wall dead ahead.

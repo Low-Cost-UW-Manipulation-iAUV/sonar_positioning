@@ -41,7 +41,7 @@ void sonar_transformer::get_odom_pool_offset(void) {
 void sonar_transformer::get_sonar_mount_base_link_yaw(void) {
 
     std::vector<double> temp_vector;
-    if (!nh_.getParam("/sonar/sonar_positioning_BMT/orientation_base_link_frame", temp_vector)) {
+    if (!nh_.getParam("/sonar/sonarBMT/orientation_base_link_frame", temp_vector)) {
         ROS_ERROR("Sonar Transform: Could not find static_sonarBMT_mount_base_link_yaw, exiting");
         ros::shutdown();
     }
@@ -51,7 +51,7 @@ void sonar_transformer::get_sonar_mount_base_link_yaw(void) {
 
 
     temp_vector.clear();
-    if (!nh_.getParam("/sonar/sonar_positioning_UWE/orientation_base_link_frame", temp_vector)) {
+    if (!nh_.getParam("/sonar/sonarUWE/orientation_base_link_frame", temp_vector)) {
         ROS_ERROR("Sonar Transform: Could not find static_sonarUWE_mount_base_link_yaw, exiting");
         ros::shutdown();
     }
@@ -64,7 +64,7 @@ void sonar_transformer::get_sonar_mount_base_link_yaw(void) {
 void sonar_transformer::get_sonar_offset(void) {
 
     std::vector<double> temp;
-    if (!nh_.getParam("/sonar/sonar_positioning_BMT/position_base_link_frame", temp)) {
+    if (!nh_.getParam("/sonar/sonarBMT/position_base_link_frame", temp)) {
         ROS_ERROR("Sonar Transform: Could not find SONAR_BMT position, exiting");
         ros::shutdown();
     }
@@ -72,7 +72,7 @@ void sonar_transformer::get_sonar_offset(void) {
     bmt_Sy = temp.at(1);
 
     temp.clear();
-    if (!nh_.getParam("/sonar/sonar_positioning_UWE/position_base_link_frame", temp)) {
+    if (!nh_.getParam("/sonar/sonarUWE/position_base_link_frame", temp)) {
         ROS_ERROR("Sonar Transform: Could not find SONAR_BMT position, exiting");
         ros::shutdown();
     }
@@ -84,8 +84,8 @@ void sonar_transformer::get_sonar_offset(void) {
         ROS_ERROR("Sonar Transform: Could not find SVS position, exiting");
         ros::shutdown();
     }
+    svs_Sz = temp.at(2);
     svs_Sx = temp.at(0);
-    svs_Sy = temp.at(1);
 }
 
 void sonar_transformer::get_broadcast_rate(void) {
@@ -142,7 +142,7 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
 
    // And finally for the SVS aka dz
     double svs_dz;    
-    find_dx(pool_bl_pitch, svs_Sx, svs_Sy, svs_dz);
+    find_dx(pool_bl_pitch, svs_Sz, svs_Sx, svs_dz);
 
     // fill and broadcast the transform
     q.setRPY(0.0,0.0,0.0);
