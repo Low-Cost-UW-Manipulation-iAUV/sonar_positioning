@@ -49,9 +49,6 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 // Get frame_id from parameter server
     get_frame_id();
 
-//  Get the rotationa of the sonar head reference in base_link
-    get_sonar_mount_offset();
-
 // Get the (initial) target headings for the sonar
     get_ENU_beam_targets();
 
@@ -197,24 +194,6 @@ void sonar_position::get_transform_search_update_rate(void) {
         ROS_ERROR("Sonar Position - %s: couldn't find transform_search_update_rate, exiting", sonar_name_.c_str());
         ros::shutdown();
     }  
-}
-
-/** get_sonar_mount_offset(): Get the sonar mounting offset (to account for UWEsonar facing backwards...)
-*/
-void sonar_position::get_sonar_mount_offset(void) {
-    std::ostringstream param_address;    
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/orientation_base_link_frame";
-    std::vector<double> temp_vector;
-    if (!nh_.getParamCached(param_address.str(), temp_vector)) {
-
-        ROS_ERROR("Sonar Position - %s: Could not find orientation_base_link_frame, exiting", sonar_name_.c_str());
-        ros::shutdown();
-    } 
-    // we want it in rad
-    sonar_mount_offset = temp_vector.at(2) * M_PI / 180;
-    ROS_INFO("sonar_mount_offset - %s: %f", sonar_name_.c_str(), sonar_mount_offset);
 }
 
 /** get_ENU_beam_targets(): Get the direction we want the sonar to look towards in the pool frame

@@ -38,9 +38,7 @@ private:
     void get_ENU_beam_targets(void);
     void get_processing_parameters(void);
     void get_transform_search_update_rate(void);
-    void get_sonar_mount_offset(void);
 
-    double sonar_mount_offset;
     double last_distance;
     double position;
     double angle;
