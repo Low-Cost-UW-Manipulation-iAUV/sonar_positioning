@@ -28,12 +28,11 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 
 
 // Prep variables    
-    pool_bl_yaw = 0;
     old_yaw = 0;
-    pool_bl_pitch = 0;
-    pool_bl_roll = 0;
+    pool_sh_yaw = 0;    
+    pool_sh_pitch = 0;
+    pool_sh_roll = 0;
     last_distance = 0;
-    bvm_data_setup = false;
     update_rate = 1;
     sonar_configured = false;
     squared_rolling_setup = false;
@@ -50,14 +49,17 @@ sonar_position::sonar_position(ros::NodeHandle nh, std::string sonar_name) {
 // Get frame_id from parameter server
     get_frame_id();
 
+//  Get the rotationa of the sonar head reference in base_link
+    get_sonar_mount_offset();
+
 // Get the (initial) target headings for the sonar
     get_ENU_beam_targets();
 
 // Prep the processing parameters
     get_processing_parameters();
 
-// Find the yaw angle in the pool frame
-    pool_base_link_timer = nh_.createTimer(transform_search_update_rate, &sonar_position::tf_pool_sonar, this);
+// Find the sonar head heading in the pool frame
+    pool_sonar_head_timer = nh_.createTimer(transform_search_update_rate, &sonar_position::tf_pool_sonar_head, this);
 
 
 // Track the wall at the specified 
@@ -185,6 +187,7 @@ void sonar_position::get_frame_id(void) {
         ros::shutdown();
     }  
 }
+
 /** transform_search_update_rate(): 
 */
 void sonar_position::get_transform_search_update_rate(void) {
@@ -196,13 +199,29 @@ void sonar_position::get_transform_search_update_rate(void) {
     }  
 }
 
-/** get_ENU_beam_targets(): Get the initial heading (ENU) we want the sonar to look at.
-        THis might be in reference to 
+/** get_sonar_mount_offset(): Get the sonar mounting offset (to account for UWEsonar facing backwards...)
+*/
+void sonar_position::get_sonar_mount_offset(void) {
+    std::ostringstream param_address;    
+    param_address.clear();
+    param_address.str("");
+    param_address << "/sonar/" << sonar_name_ << "/orientation_base_link_frame";
+    std::vector<double> temp_vector;
+    if (!nh_.getParamCached(param_address.str(), temp_vector)) {
+
+        ROS_ERROR("Sonar Position - %s: Could not find orientation_base_link_frame, exiting", sonar_name_.c_str());
+        ros::shutdown();
+    } 
+    // we want it in rad
+    sonar_mount_offset = temp_vector.at(2) * M_PI / 180;
+    ROS_INFO("sonar_mount_offset - %s: %f", sonar_name_.c_str(), sonar_mount_offset);
+}
+
+/** get_ENU_beam_targets(): Get the direction we want the sonar to look towards in the pool frame
 */
 void sonar_position::get_ENU_beam_targets(void) {
-    beam_target.clear();
-    beam_target.resize(2,0);
-    
+ 
+    // Which axis is this sonar measuring?  
     std::ostringstream param_address;
     axis = "";
     param_address.clear();
@@ -214,23 +233,23 @@ void sonar_position::get_ENU_beam_targets(void) {
         nh_.setParam(param_address.str(), axis);
     }
 
+    // what direction in the pool frame to we want to look at? What are the beamwidth limits?
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/beam_target";
-    if (!nh_.getParamCached(param_address.str(), beam_target)) {
+    std::vector<double> temp_vector;
+    if (!nh_.getParamCached(param_address.str(), temp_vector)) {
 
-        ROS_ERROR("Sonar Position - %s: Could not find beam_target assuming 0->4Deg", sonar_name_.c_str());
-        
-        beam_target[0] = STD_ANGLE_LEFT ; // 4°
-        beam_target[1] = STD_ANGLE_RIGHT ; // 0°
-        nh_.setParam(param_address.str(), beam_target);
+        ROS_ERROR("Sonar Position - %s: Could not find beam_target, exiting", sonar_name_.c_str());
+        ros::shutdown();
     } 
-    // we want the local beam target in rad
-    beam_target[0] = beam_target[0] * M_PI / 180;
-    beam_target[1] = beam_target[1] * M_PI / 180;
-    ROS_INFO("beam_targets - %s, [%f, %f]",axis.c_str(), beam_target[0], beam_target[1] );
-  
+    // beam_width targets
+    beam_target.at(0) = temp_vector.at(0) * M_PI / 180;
+    beam_target.at(1) = temp_vector.at(1) * M_PI / 180;
+    // direction of the wall
+    beam_goal = temp_vector.at(2) * M_PI / 180;
 
+    // how often do we want to update the sonar head heading
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/update_rate";
@@ -240,6 +259,7 @@ void sonar_position::get_ENU_beam_targets(void) {
         nh_.setParam(param_address.str(), update_rate);        
     }
 
+    // how far is it allowed to deviate from the set course?
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/track_wall/heading_threshold";
@@ -256,45 +276,7 @@ void sonar_position::get_ENU_beam_targets(void) {
 void sonar_position::get_processing_parameters(void) {
 
     std::ostringstream param_address;
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/consecutive_bin_value_threshold";
-    if (!nh_.getParamCached(param_address.str(), consecutive_bin_value_threshold)) {
 
-        ROS_ERROR("Sonar Position - %s: Could not find consecutive_bin_value_threshold, assuming 100.", sonar_name_.c_str());
-        consecutive_bin_value_threshold = 100;
-        nh_.setParam(param_address.str(), consecutive_bin_value_threshold);
-    }
-
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/wall_threshold";
-    if (!nh_.getParamCached(param_address.str(), wall_threshold)) {
-
-        ROS_ERROR("Sonar Position - %s: Could not find threshold, assuming 3.", sonar_name_.c_str());
-        wall_threshold = 3;
-        nh_.setParam(param_address.str(), wall_threshold);
-    }
-
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/valley_limit";
-    if (!nh_.getParamCached(param_address.str(), valley_limit)) {
-
-        ROS_ERROR("Sonar Position - %s: Could not find valley_limit, assuming 10.", sonar_name_.c_str());
-        valley_limit = 10;
-        nh_.setParam(param_address.str(), valley_limit);
-    }
-
-    param_address.clear();
-    param_address.str("");
-    param_address << "/sonar/" << sonar_name_ << "/processing_params/mountain_minimum";
-    if (!nh_.getParamCached(param_address.str(), mountain_minimum)) {
-
-        ROS_ERROR("Sonar Position - %s: Could not find threshold, assuming 70.", sonar_name_.c_str());
-        mountain_minimum = 70;
-        nh_.setParam(param_address.str(), mountain_minimum);
-    }
     param_address.clear();
     param_address.str("");
     param_address << "/sonar/" << sonar_name_ << "/processing_params/skip_bins";
@@ -324,7 +306,7 @@ void sonar_position::get_processing_parameters(void) {
     }
 }
 
-/** send_limits_sonar():
+/** send_limits_sonar(): produce a nice string of the limits we want to send and call the ros service running in the sonar driver node
 */
 int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     // send the sonar the command to only sweep our required area.
@@ -345,13 +327,18 @@ int sonar_position::send_limits_sonar(double left_limit, double right_limit) {
     }
 }
 
-
-/** tf_pool_sonar(): gets the current heading of the sub in reference to the pool
+/** tf_pool_sonar_head(): gets the current heading of the sonarhead in reference to the pool
+                        Timer based callback
 */
-void sonar_position::tf_pool_sonar(const ros::TimerEvent& event ) {
+void sonar_position::tf_pool_sonar_head(const ros::TimerEvent& event ) {
     tf::StampedTransform found_transform;
+
+    std::ostringstream sonar_name_head_string;
+    sonar_name_head_string.clear();
+    sonar_name_head_string.str("");
+    sonar_name_head_string <<  sonar_name_ << "_head";
     try{
-      listener.lookupTransform("/pool", "/base_link", ros::Time(0), found_transform);
+      listener.lookupTransform("/pool", sonar_name_head_string.str(), ros::Time(0), found_transform);
     }
     catch (tf::TransformException ex){
       ROS_ERROR("%s",ex.what());
@@ -361,8 +348,7 @@ void sonar_position::tf_pool_sonar(const ros::TimerEvent& event ) {
     // get the rotation from pool to base_link
     tf::Quaternion quat = found_transform.getRotation();
     tf::Matrix3x3 m(quat);
-    m.getRPY(pool_bl_roll, pool_bl_pitch, pool_bl_yaw);
-    ROS_INFO("sonar_position: yaw of pool->base_link : %f", pool_bl_yaw);
+    m.getRPY(pool_sh_roll, pool_sh_pitch, pool_sh_yaw);
 
 }
 
@@ -382,18 +368,25 @@ void sonar_position::sub_callback_sonar(const std_msgs::Int32MultiArray::ConstPt
 
 /** timed_wall_tracking(): Decides if we want to update the sonar head direction
                             Runs every x seconds and updates the direction if the 
-                            heading has changed more than heading_threshold
+                            sonar head is outside of our allowed zone around beam_goal
 */
 void sonar_position::timed_wall_tracking(const ros::TimerEvent & event) {
     if(sonar_configured == false) {
         track_wall();
         sonar_configured = true;
     }
-    if (fabs(pool_bl_yaw - old_yaw) >= heading_threshold )  { //
-        old_yaw = pool_bl_yaw;
-        track_wall();
-    }
+    // of we are outside of our allowed zone around beam_goal
+    if ( fabs(wrapRad(beam_goal) - wrapRad(pool_sh_yaw) ) > heading_threshold) {
 
+        // double check we haven't set the beam_width bigger than our allowed range
+        if ( (wrapRad(beam_target.at(0) - wrapRad(beam_goal)) > heading_threshold) || ((wrapRad(beam_goal) - wrapRad(beam_target.at(1))) > heading_threshold) ){
+            ROS_ERROR("sonar_positioning - %s: the requested sonar beam does not fit into your heading threshold", sonar_name_.c_str());
+        } else {
+            ROS_INFO("sonar_positioning - %s: Updating the sonar head heading", sonar_name_.c_str());
+            track_wall();
+        }
+
+    }
 }
 
 
@@ -403,18 +396,71 @@ int sonar_position::track_wall(void) {
 
     // Update the beam target
     get_ENU_beam_targets();
-   double left, right;
+    double left, right;
    
+    // Find the sonar_mount heading in the pool frame
+    double sonar_mount_heading_pool_frame = get_sonar_mount_heading_pool();
 
-    left  =  wrapRad(beam_target[0] - pool_bl_yaw);
-    right =  wrapRad(beam_target[1] - pool_bl_yaw);
+    left  =  wrapRad(wrapRad(beam_target.at(0)) - wrapRad(sonar_mount_heading_pool_frame));
+    right =  wrapRad(wrapRad(beam_target.at(1)) - wrapRad(sonar_mount_heading_pool_frame));
 
-
+    ROS_INFO("%s: left : %f = %f - %f", sonar_name_.c_str(), left , beam_target.at(0), sonar_mount_heading_pool_frame);
     if (send_limits_sonar(left, right) == EXIT_SUCCESS) {
         return EXIT_SUCCESS;
     } else {
         return EXIT_FAILURE;
     }
+}
+
+
+/** get_sonar_mount_heading_pool(): Finds the heading of the sonar mount in the pool frame
+*/
+double sonar_position::get_sonar_mount_heading_pool(void) {
+    tf::StampedTransform found_transform;
+
+    std::ostringstream sonar_name_head_string;
+    sonar_name_head_string.clear();
+    sonar_name_head_string.str("");
+    sonar_name_head_string <<  sonar_name_ << "_mount";
+    try{
+      listener.lookupTransform("/pool", sonar_name_head_string.str(), ros::Time(0), found_transform);
+    }
+    catch (tf::TransformException ex){
+      ROS_ERROR("%s",ex.what());
+      ros::Duration(1.0).sleep();
+    }
+
+    // get the rotation from pool to base_link
+    tf::Quaternion quat = found_transform.getRotation();
+    tf::Matrix3x3 m(quat);
+    double rubbish;
+    double angle;
+    m.getRPY(rubbish, rubbish, angle);
+    return angle;
+
+}
+/** broadcast_sonar_head(): Broadcast the sonarhead position in the sonar mount frame
+*/
+void sonar_position::broadcast_sonar_head(double angle_rad) {
+    tf::Transform transform;
+    transform.setOrigin( tf::Vector3(0.0,0.0,0.0) );
+
+    tf::Quaternion q;
+    q.setRPY(0.0,0.0,angle_rad);
+
+    transform.setRotation(q);
+    std::ostringstream sonar_name_mount_string;
+    sonar_name_mount_string.clear();
+    sonar_name_mount_string.str("");
+    sonar_name_mount_string <<  sonar_name_ << "_mount";
+
+    std::ostringstream sonar_name_head_string;
+    sonar_name_head_string.clear();
+    sonar_name_head_string.str("");
+    sonar_name_head_string <<  sonar_name_ << "_head";
+
+    br_sonar_mount_head.sendTransform( tf::StampedTransform(transform, ros::Time::now(), sonar_name_mount_string.str(), sonar_name_head_string.str() ) );
+
 }
 
 
@@ -424,7 +470,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     
     // get the angle in rad from the sonar steps
     double angle_rad = steps2rad(message->data[0]);
-
+    broadcast_sonar_head(angle_rad);
     // find the wall and the  distance (hypotenuse) to it
     double d_hypot = 0;
     if( squared_rolling(message, &d_hypot) == EXIT_FAILURE) {
@@ -436,7 +482,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     d_hypot = -1 * d_hypot; 
 
     // get the shortest distance from the hypothenuse.     
-    double adjascent = hyp2ad(d_hypot, angle_rad);
+    double adjascent = hyp2ad(d_hypot);
 
     if(axis == "x") {
 
@@ -482,13 +528,9 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     }
 }
 
-double sonar_position::hyp2ad(double hypothenuse, double sonar_head_angle) {
-    double xy_angle;
-    if (axis == "y") {
-        return sin(wrapRad(sonar_head_angle) + wrapRad(pool_bl_yaw) ) * hypothenuse;
-    } else {
-        return cos(wrapRad(sonar_head_angle) + wrapRad(pool_bl_yaw) ) * hypothenuse;
-    }
+double sonar_position::hyp2ad(double hypothenuse) {
+    
+    return cos(wrapRad(beam_goal) - wrapRad(pool_sh_yaw)) * hypothenuse;
 }
 
 int sonar_position::store_variance(double variance, std::string variable_name) {
@@ -513,59 +555,6 @@ int sonar_position::store_variance(double variance, std::string variable_name) {
 }
 
 
-/** sonar2Distance(): Find the strongest signal in the sonar array.
-*/
-double sonar_position::sonar2Distance(const std_msgs::Int32MultiArray::ConstPtr& message, double *d_hypot) {
-    get_processing_parameters();
-
-    // Find the number of data bins
-    int numBins = message->data[1];
-    // the maximum distance to be found in dM
-    double range = message->data[2]/10;
-    // ensure we are staying within the message and that neither of these numbers are NaN
-    if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins != 0) ) {
-
-        double strongest_bin = 0;
-        // find the strongest reflection
-        int counter_peaks = 0;
-        for (int x=3+skip_bins; x < (numBins+3); x++) {
-
-            // count consecutive values higher than the threshold
-            if (message->data[x] >= consecutive_bin_value_threshold) {
-                counter_peaks ++;
-            } else {
-                counter_peaks = 0;
-            }
-
-            // find the average value once we've got enough consecutive values
-            if (counter_peaks >= wall_threshold) {
-                int start = x - counter_peaks + 1;
-                strongest_bin = ( ((double)(x + start) ) / 2.0 );
-                //and shift it back so the number of bins is correct
-                strongest_bin = strongest_bin - 3;
-                // make sure we don't read any reflections which arrive later than the first reflection.
-                break;
-            }
-        }
-
-        // make sure the stronges reflection is also non NaN
-        if(isnan(strongest_bin) == false) {
-                    // turn range back into meters from dM and return the strongest reflection distance
-            last_distance = strongest_bin * (range / (double) numBins);
-            *d_hypot = last_distance;
-            return EXIT_SUCCESS;
-        } else {
-            ROS_ERROR("Sonar Positioning - %s: Strongest_bin was broken. - returning last_distance", sonar_name_.c_str());
-
-            return EXIT_FAILURE;
-        }
-        
-    } else {
-        ROS_ERROR("Sonar_Positioning - %s: Message did not contain proper info. - returning last_distance", sonar_name_.c_str());
-        //ROS_ERROR("debug info: data.size(): %lu, numBins: %d, range: %f", message->data.size(), numBins, range );
-        return EXIT_FAILURE;
-    }
-}
 
 
 int sonar_position::squared_rolling(const std_msgs::Int32MultiArray::ConstPtr& message, double * d_hypot) {
@@ -614,69 +603,6 @@ int sonar_position::squared_rolling(const std_msgs::Int32MultiArray::ConstPtr& m
 
                 return EXIT_SUCCESS;
             }        
-        }
-        ROS_ERROR("sonar_position - %s - %s - BVM Could not find wall", sonar_name_.c_str(), axis.c_str());
-        return EXIT_FAILURE;
-    }
-    ROS_ERROR("sonar_position - %s - %s - data broken", sonar_name_.c_str(), axis.c_str());
-
-    return EXIT_FAILURE;
-}
-
-
-int sonar_position::blurred_valleys_mountains(const std_msgs::Int32MultiArray::ConstPtr& message, double * d_hypot) {
-    get_processing_parameters();
-
-    int numBins = message->data[1];
-    // the maximum distance to be found in dM
-    double range = message->data[2]/10;
-    // ensure we are staying within the message and that neither of these numbers are NaN
-    if(( message->data.size() >= (numBins + 3) ) && (isnan(numBins) == false)  && (isnan(range) == false) && (numBins >= 10) ) {
-        std::vector<double> temp;
-
-        if(bvm_data_setup == false) {
-            temp.resize(numBins,0.1);
-            
-            bvm_data.clear();
-            bvm_data.resize(3);
-            bvm_data_setup = true;
-            bvm_data.at(0) = temp;
-            bvm_data.at(1) = temp;
-            bvm_data.at(2) = temp;
-        }
-        // store the data in the circular buffer
-        std::vector<double> blurred;
-        temp.assign(message->data.begin()+3, message->data.end());
-        bvm_data.push_back(temp);
-        // Convolution with a kernel = ones(3), kernel(2,2) = 0;
-        blurred.reserve(numBins);
-        // assign the first value,  convolution cant do this
-        blurred.push_back(bvm_data[1][0] );
-
-        for (int x = 1; x < numBins-1; x++) {
-
-            blurred.push_back(bvm_data[1][x] + (bvm_data[0][x] + bvm_data[2][x] + bvm_data[0][x-1] + bvm_data[1][x-1] + bvm_data[2][x-1] + bvm_data[0][x+1] + bvm_data[1][x+1] + bvm_data[2][x+2])/8 );
-        }
-        // assign the first value,  convolution cant do this
-        blurred.push_back(*bvm_data[2].end() );
-
-        // Go through all datapoints after the crappy sensor area
-        for (std::vector<double>::iterator itx = blurred.begin()+skip_bins; itx != (blurred.end()-20); ++itx) {
-           
-            // is the valley low enough
-            if ( mean(blurred, itx, itx+10) <= valley_limit) {
-           
-                // is the mountain high enough find the peak                
-                if (mean(blurred,itx+10, itx+20) >= mountain_minimum) {
-
-                    std::vector<double>::iterator it = std::max_element(itx+10, itx+20);
-                    
-                    // and return the peaks position
-                    *d_hypot = ( (double)(it - blurred.begin()) ) * (range / (double) numBins);
-                    
-                    return EXIT_SUCCESS;
-                } 
-            }
         }
         ROS_ERROR("sonar_position - %s - %s - BVM Could not find wall", sonar_name_.c_str(), axis.c_str());
         return EXIT_FAILURE;
@@ -814,8 +740,8 @@ int main(int argc, char **argv) {
     ros::AsyncSpinner spinner(8);
     spinner.start();
     // create the instance of the class
-    sonar::sonar_position orange_box_0(nh, "sonar_positioning_UWE");
-    sonar::sonar_position orange_box_1(nh, "sonar_positioning_BMT");
+    sonar::sonar_position orange_box_0(nh, "sonarUWE");
+    sonar::sonar_position orange_box_1(nh, "sonarBMT");
 
     // register the 
     ros::spin();
