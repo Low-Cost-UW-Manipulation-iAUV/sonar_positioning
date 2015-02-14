@@ -612,7 +612,7 @@ void sonar_position::publish_position(std::string axis) {
     } else {
         ROS_ERROR("sonar_position - %s: no axis found...", sonar_name_.c_str());
     }
-
+    sonar_position.pose.pose.orientation.w = 1;
 
     pub_position.publish(sonar_position);
 }

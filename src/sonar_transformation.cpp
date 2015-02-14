@@ -1,11 +1,12 @@
 #include <tf/transform_datatypes.h>
 #include "sonar_positioning/sonar_transformation.hpp"
+using namespace message_filters;
 namespace sonar_transform {
 
 
 sonar_transformer::sonar_transformer(ros::NodeHandle nh) {
     nh_ = nh;
-    
+    pub_sequence = 0;
     get_odom_pool_offset();
     get_sonar_offset();
     get_sonar_mount_base_link_yaw();
@@ -15,8 +16,58 @@ sonar_transformer::sonar_transformer(ros::NodeHandle nh) {
     pool_sonar_timer = nh_.createTimer(update_freq, &sonar_transformer::bc_pool_sonar, this);
     odom_pool_timer = nh_.createTimer(update_freq, &sonar_transformer::bc_odom_pool, this);
     bl_sonar_mount_timer = nh_.createTimer(update_freq, &sonar_transformer::bc_sonar_mount_bl, this);
+
+    pub_sonars = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/sonar/position", 10);
+
+    sub_sonarBMT.subscribe(nh_, "/sonar/positionBMT", 10);
+    sub_sonarUWE.subscribe(nh_, "/sonar/positionUWE", 10);
+    sync = new Synchronizer<MySyncPolicy>(MySyncPolicy(2), sub_sonarBMT, sub_sonarUWE);
+    sync->registerCallback(boost::bind(&sonar_transformer::sonar_callback, this, _1, _2));
 }
 sonar_transformer::~sonar_transformer(void) {
+
+}
+
+void sonar_transformer::sonar_callback(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& sonarBMT, const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& sonarUWE ) {
+    geometry_msgs::PoseWithCovarianceStamped output;  
+    geometry_msgs::PoseStamped temp_in;
+    geometry_msgs::PoseStamped temp_out;
+    ROS_INFO("repacking the sonar_data");
+    // Transform the sonarBMT into the pool frame
+    temp_in.header = sonarBMT->header;
+    temp_in.pose = sonarBMT->pose.pose;
+    try {
+        listener.transformPose("pool", temp_in, temp_out);
+    } catch (tf::TransformException &ex) {
+      printf ("Failure %s\n", ex.what()); //Print exception which was caught
+    }
+    // store the new position of the sonarBMT and its covariance (x axis)
+    output.pose.pose.position.x = temp_out.pose.position.x;
+    output.pose.covariance.fill(0.0);
+    output.pose.covariance.at(0) = sonarBMT->pose.covariance.at(0);
+
+    // Transform the sonarUWE into the pool frame
+    temp_in.header = sonarUWE->header;
+    temp_in.pose = sonarUWE->pose.pose;
+    try {    
+        listener.transformPose("pool", temp_in, temp_out);
+    } catch (tf::TransformException &ex) {
+      printf ("Failure %s\n", ex.what()); //Print exception which was caught
+    }
+    // store the new position of the sonarUWE and its covariance (x axis)
+    output.pose.pose.position.y = temp_out.pose.position.y;
+    output.pose.covariance.at(7) = sonarUWE->pose.covariance.at(7);
+    output.pose.pose.orientation.w = 1;
+
+    // prepare the outgoing message
+    output.header.seq = pub_sequence;
+    pub_sequence ++;
+
+    output.header.stamp = ros::Time::now();
+    output.header.frame_id = "pool";
+    if(output.pose.pose.position.x != 0 && output.pose.pose.position.y != 0) {
+        pub_sonars.publish(output);
+    }
 
 }
 
@@ -123,7 +174,7 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
     tf::Quaternion q;
     q.setRPY(0.0,0.0,0.0);
     transform.setRotation(q);
-    transform.setOrigin( tf::Vector3(bmt_dx,0.0,0.0) );
+    transform.setOrigin( tf::Vector3(bmt_dx * -1,0.0,0.0) );
 
     // broadcast it
     br_pool_sonar.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "pool", "SONAR_BMT"));
@@ -135,7 +186,7 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
     // fill and broadcast the transform
     q.setRPY(0.0,0.0,0.0);
     transform.setRotation(q);
-    transform.setOrigin( tf::Vector3(0.0,uwe_dy,0.0) );
+    transform.setOrigin( tf::Vector3(0.0,uwe_dy * -1,0.0) );
 
     // broadcast it
     br_pool_sonar.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "pool", "SONAR_UWE"));
@@ -147,7 +198,7 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
     // fill and broadcast the transform
     q.setRPY(0.0,0.0,0.0);
     transform.setRotation(q);
-    transform.setOrigin( tf::Vector3(0.0,0.0,svs_dz) );
+    transform.setOrigin( tf::Vector3(0.0,0.0,svs_dz * -1) );
 
     // broadcast it
     br_pool_sonar.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "pool", "SVS"));
