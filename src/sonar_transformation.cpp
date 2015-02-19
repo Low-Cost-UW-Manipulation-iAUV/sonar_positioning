@@ -7,15 +7,11 @@ namespace sonar_transform {
 sonar_transformer::sonar_transformer(ros::NodeHandle nh) {
     nh_ = nh;
     pub_sequence = 0;
-    get_odom_pool_offset();
     get_sonar_offset();
-    get_sonar_mount_base_link_yaw();
     get_broadcast_rate();
 
     ros::Duration update_freq = ros::Duration(1.0/broadcast_rate);
     pool_sonar_timer = nh_.createTimer(update_freq, &sonar_transformer::bc_pool_sonar, this);
-    odom_pool_timer = nh_.createTimer(update_freq, &sonar_transformer::bc_odom_pool, this);
-    bl_sonar_mount_timer = nh_.createTimer(update_freq, &sonar_transformer::bc_sonar_mount_bl, this);
 
     pub_sonars = nh_.advertise<geometry_msgs::PoseWithCovarianceStamped>("/sonar/position", 10);
 
@@ -71,44 +67,7 @@ void sonar_transformer::sonar_callback(const geometry_msgs::PoseWithCovarianceSt
 
 }
 
-/** get_odom_pool_offset(): get the sonar offset from the parameter server
-*/
-void sonar_transformer::get_odom_pool_offset(void) {
 
-    std::vector<double> temp;
-    if (!nh_.getParam("/sonar/odom_pool_rotation/quat", temp)) {
-        ROS_ERROR("Sonar Transform: Could not find static_odom_pool_yaw, exiting");
-        ros::shutdown();
-    }
-    tf::Quaternion q(temp.at(0), temp.at(1), temp.at(2), temp.at(3));
-    tf::Matrix3x3 m(q);
-    double rubbish;
-    m.getRPY(rubbish, rubbish, static_odom_pool_yaw);
-    nh_.setParam("/sonar/odom_pool_rotation/deg", static_odom_pool_yaw * 180/M_PI);
-}
-
-/** get_odom_pool_offset(): get the sonar offset from the parameter server
-*/
-void sonar_transformer::get_sonar_mount_base_link_yaw(void) {
-
-    std::vector<double> temp_vector;
-    if (!nh_.getParam("/sonar/sonarBMT/orientation_base_link_frame", temp_vector)) {
-        ROS_ERROR("Sonar Transform: Could not find static_sonarBMT_mount_base_link_yaw, exiting");
-        ros::shutdown();
-    }
-
-    // internally everything is running in radians
-    static_sonarBMT_mount_base_link_yaw = temp_vector.at(2) * M_PI/180;
-
-
-    temp_vector.clear();
-    if (!nh_.getParam("/sonar/sonarUWE/orientation_base_link_frame", temp_vector)) {
-        ROS_ERROR("Sonar Transform: Could not find static_sonarUWE_mount_base_link_yaw, exiting");
-        ros::shutdown();
-    }
-    // internally everything is running in radians
-    static_sonarUWE_mount_base_link_yaw = temp_vector.at(2) * M_PI/180;    
-}
 
 /** get_sonar_offsets(): get the sonar offset from the parameter server
 */
@@ -153,7 +112,7 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
     try{
       listener.lookupTransform("/pool", "/base_link", ros::Time(0), found_transform);
     }
-    catch (tf::TransformException ex){
+    catch (tf::TransformException &ex){
       ROS_ERROR("%s",ex.what());
       ros::Duration(1.0).sleep();
     }
@@ -205,37 +164,7 @@ void sonar_transformer::bc_pool_sonar(const ros::TimerEvent& event) {
 
 }
 
-/** bc_odom_pool(): will acctually do the work of broadcasting the transforms
-*/
-void sonar_transformer::bc_odom_pool(const ros::TimerEvent& event) {
-    tf::Transform transform;
-    transform.setOrigin( tf::Vector3(0.0,0.0,0.0) );
 
-    tf::Quaternion q;
-    q.setRPY(0.0,0.0,static_odom_pool_yaw);
-
-    transform.setRotation(q);
-    br_odom_pool.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "odom", "pool"));
-}
-
-/** bc_odom_pool(): will acctually do the work of broadcasting the transforms
-*/
-void sonar_transformer::bc_sonar_mount_bl(const ros::TimerEvent& event) {
-    tf::Transform transform;
-    transform.setOrigin( tf::Vector3(0.0,0.0,0.0) );
-
-    tf::Quaternion q;
-    q.setRPY(0.0,0.0,static_sonarBMT_mount_base_link_yaw);
-
-    transform.setRotation(q);
-    br_bl_sonar_mount.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "base_link", "sonarBMT_mount"));
-
-    // broadcast the uwe sonar_mount transformation
-    q.setRPY(0.0,0.0,static_sonarUWE_mount_base_link_yaw);
-
-    transform.setRotation(q);
-    br_bl_sonar_mount.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "base_link", "sonarUWE_mount"));    
-}
 
 
 /** find_dx(): calculates the offset of the sonar in frame 'pool'

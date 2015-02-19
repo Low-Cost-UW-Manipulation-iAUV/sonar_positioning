@@ -405,7 +405,7 @@ double sonar_position::get_sonar_mount_heading_pool(void) {
     try{
       listener.lookupTransform("/pool", sonar_name_head_string.str(), ros::Time(0), found_transform);
     }
-    catch (tf::TransformException ex){
+    catch (tf::TransformException &ex) {
       ROS_ERROR("%s",ex.what());
       ros::Duration(1.0).sleep();
     }
@@ -419,9 +419,9 @@ double sonar_position::get_sonar_mount_heading_pool(void) {
     return angle;
 
 }
-/** broadcast_sonar_head(): Broadcast the sonarhead position in the sonar mount frame
+/** broadcast_feedback_frame(): Broadcast the sonarhead position in the sonar mount frame
 */
-void sonar_position::broadcast_sonar_head(double angle_rad) {
+void sonar_position::broadcast_feedback_frame(double angle_rad) {
     tf::Transform transform;
     transform.setOrigin( tf::Vector3(0.0,0.0,0.0) );
 
@@ -450,7 +450,7 @@ int sonar_position::process_sonar(const std_msgs::Int32MultiArray::ConstPtr& mes
     
     // get the angle in rad from the sonar steps
     double angle_rad = steps2rad(message->data[0]);
-    broadcast_sonar_head(angle_rad);
+    broadcast_feedback_frame(angle_rad);
     // find the wall and the  distance (hypotenuse) to it
     double d_hypot = 0;
     if( squared_rolling(message, &d_hypot) == EXIT_FAILURE) {

@@ -62,7 +62,7 @@ private:
     ros::Timer pool_sonar_head_timer;
 
     // broadcast the sonarhead in sonar mount
-    void broadcast_sonar_head(double);
+    void broadcast_feedback_frame(double);
     tf::TransformBroadcaster br_sonar_mount_head;
     
     // Sonar specific 

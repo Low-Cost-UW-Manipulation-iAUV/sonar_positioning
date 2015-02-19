@@ -1,0 +1,6 @@
+<!-- Publishes a static transform (valid even if days old) from odom to pool. It is nothing else than the yaw rotation from north to the pool frame -->
+<launch>
+<node pkg="tf" type="static_transform_publisher" name="sonarBMT_mount_frame_broadcaster" args="0 0 0 0 0 0 base_link sonarBMT_mount 10" />
+<node pkg="tf" type="static_transform_publisher" name="sonarUWE_mount_frame_broadcaster" args="0 0 0 3.1415926536 0 0 base_link sonarUWE_mount 10" />
+
+</launch>

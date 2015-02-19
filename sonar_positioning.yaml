@@ -1,7 +1,4 @@
 sonar:                                                          # The config file for the sonar_positioning node
-    odom_pool_rotation:  # rotation in quaternion from odom->pool 
-        quat: [0.0114342635497, -0.02130962722, 0.956779122353, 0.289808094501]
-        deg: 146.3304404385931    # 400 = unknown
     transform_search_update_rate: 50
     broadcast_rate: 50
     number_of_sonars: 2
@@ -11,8 +8,8 @@ sonar:                                                          # The config fil
         publish_data_to: /sonar/positionUWE
         parent_frame: odom
         child_frame: SONAR_UWE
-        position_base_link_frame: [-0.595, 0.0, -0.2075]       # What is the offset from the base_link frame?
-        orientation_base_link_frame: [0.0, 0.0, 180 ]    # RPY What angle are the sonars mounted at relative to base_link_frame? 
+        position_base_link_frame: [-0.595, 0.0, -0.2075]       # What is the offset from the base_link frame 
+        #orientation_base_link_frame: [0.0, 0.0, 180 ]    # RPY What angle are the sonars mounted at relative to base_link_frame? README!!! This is published as a static tf in the launchfile in this node
         calibration_length: 200                      # How many samples do you want to calibrate the sonar for? Dont move the sonar in that time. The sonar should be facing a wall dead ahead.
         processing_params:
             track_wall:
